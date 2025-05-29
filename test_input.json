@@ -1,0 +1,13 @@
+{
+    "input": {
+        "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        "audio": "UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=",
+        "prompt": "The person is speaking enthusiastically with natural facial expressions",
+        "num_inference_steps": 25,
+        "guidance_scale": 7.5,
+        "prompt_cfg_scale": 5.0,
+        "audio_cfg_scale": 5.0,
+        "num_frames": 81,
+        "fps": 8
+    }
+}
