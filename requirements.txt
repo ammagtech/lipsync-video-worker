@@ -7,7 +7,7 @@ diffusers>=0.21.0
 accelerate
 safetensors
 huggingface_hub
-# modelscope
+modelscope
 opencv-python
 pillow
 numpy
@@ -16,7 +16,7 @@ librosa
 soundfile
 einops
 omegaconf
-# xformers
-# flash-attn
+xformers
+flash-attn
 gradio
 spaces
