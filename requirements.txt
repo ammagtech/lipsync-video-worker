@@ -16,7 +16,7 @@ librosa
 soundfile
 einops
 omegaconf
-# xformers
+xformers
 # flash-attn
 gradio
 spaces
