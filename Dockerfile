@@ -9,27 +9,27 @@ ENV PATH=${CUDA_HOME}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 
 # Install system dependencies and build tools
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
-    python3-dev \
-    git \
-    wget \
-    curl \
-    ffmpeg \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libglib2.0-0 \
-    libgl1-mesa-glx \
-    libfontconfig1 \
-    libxrender1 \
-    libgomp1 \
-    cmake \
-    ninja-build \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3 \
+        python3-pip \
+        python3-dev \
+        git \
+        wget \
+        curl \
+        ffmpeg \
+        libsm6 \
+        libxext6 \
+        libxrender-dev \
+        libglib2.0-0 \
+        libgl1-mesa-glx \
+        libfontconfig1 \
+        libxrender1 \
+        libgomp1 \
+        cmake \
+        ninja-build && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /
