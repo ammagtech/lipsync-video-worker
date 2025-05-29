@@ -22,9 +22,6 @@ RUN apt-get update && apt-get install -y \
     libxrender-dev \
     libglib2.0-0 \
     libgl1-mesa-glx \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
     libfontconfig1 \
     libxrender1 \
     libgomp1 \
