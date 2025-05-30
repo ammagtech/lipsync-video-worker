@@ -44,7 +44,6 @@ def load_models():
     print("Loading FantasyTalking models...")
 
     try:
-        # Set device
         device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"Using device: {device}")
 
@@ -67,10 +66,8 @@ def load_models():
         )
         pipeline.to(device)
 
-        # Apply memory optimizations
         if MEMORY_OPTIMIZATION["enable_attention_slicing"]:
             pipeline.enable_attention_slicing()
-
         if MEMORY_OPTIMIZATION["enable_cpu_offload"] and device == "cuda":
             pipeline.enable_model_cpu_offload()
 
@@ -80,8 +77,7 @@ def load_models():
     except Exception as e:
         print(f"✗ Error loading models: {e}")
         traceback.print_exc()
-        return False
-        
+        return False    
 def process_image(image_data: str) -> Optional[Image.Image]:
     """Process base64 image input"""
     try:
@@ -128,11 +124,20 @@ def process_audio(audio_data: str) -> Optional[np.ndarray]:
 
 def extract_audio_features(audio: np.ndarray) -> Optional[torch.Tensor]:
     """Extract audio features using Wav2Vec2"""
-    try:
-        global wav2vec_processor, wav2vec_model
+    global wav2vec_processor, wav2vec_model
 
-        # Process audio with Wav2Vec2
-        inputs = wav2vec_processor(audio, sampling_rate=16000, return_tensors="pt", padding=True)
+    # Check that the processor and model are loaded
+    if wav2vec_processor is None or wav2vec_model is None:
+        print("Error: Audio processor or model is not loaded.")
+        return None
+
+    try:
+        inputs = wav2vec_processor(
+            audio, 
+            sampling_rate=16000, 
+            return_tensors="pt", 
+            padding=True
+        )
 
         device = next(wav2vec_model.parameters()).device
         inputs = {k: v.to(device) for k, v in inputs.items()}
@@ -146,7 +151,6 @@ def extract_audio_features(audio: np.ndarray) -> Optional[torch.Tensor]:
     except Exception as e:
         print(f"Error extracting audio features: {e}")
         return None
-
 def generate_talking_video(image: Image.Image, audio_features: torch.Tensor, prompt: str = "", **kwargs) -> Optional[np.ndarray]:
     """Generate talking video using FantasyTalking"""
     try:
