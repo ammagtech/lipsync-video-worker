@@ -51,7 +51,11 @@ def load_models():
         # Load Wav2Vec2 for audio processing
         print("Loading Wav2Vec2 model...")
         wav2vec_processor = Wav2Vec2Processor.from_pretrained(str(WAV2VEC_MODEL_PATH))
+        if wav2vec_processor is None:
+            raise ValueError("Wav2Vec2Processor failed to load.")
         wav2vec_model = Wav2Vec2Model.from_pretrained(str(WAV2VEC_MODEL_PATH))
+        if wav2vec_model is None:
+            raise ValueError("Wav2Vec2Model failed to load.")
         wav2vec_model.to(device)
 
         # Load base video generation pipeline
@@ -77,7 +81,7 @@ def load_models():
         print(f"✗ Error loading models: {e}")
         traceback.print_exc()
         return False
-
+        
 def process_image(image_data: str) -> Optional[Image.Image]:
     """Process base64 image input"""
     try:
