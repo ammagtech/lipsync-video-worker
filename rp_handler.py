@@ -49,7 +49,11 @@ def load_models():
         if torch.cuda.is_available():
             print(f"CUDA device count: {torch.cuda.device_count()}")
             print(f"CUDA device name: {torch.cuda.get_device_name(0)}")
+            print(f"CUDA memory allocated: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
+            print(f"CUDA memory cached: {torch.cuda.memory_reserved(0) / 1024**2:.2f} MB")
             device = "cuda"
+            # Set default tensor type to CUDA
+            torch.set_default_tensor_type('torch.cuda.FloatTensor')
         else:
             print("No CUDA device available, using CPU")
             device = "cpu"
@@ -85,6 +89,8 @@ def load_models():
             use_safetensors=True,
             device_map="auto"
         ).to(device)
+        print(f"Pipeline device: {next(pipeline.parameters()).device}")
+        print(f"GPU Memory after loading pipeline: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
         
         # Enable memory efficient attention if available
         if hasattr(pipeline, 'enable_xformers_memory_efficient_attention'):
