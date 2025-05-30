@@ -24,26 +24,26 @@ RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     libfontconfig1 \
     libxrender1 \
-    libgomp1
+    libgomp1 \
+    nvidia-cuda-toolkit
 
 # Set working directory
-WORKDIR /
+WORKDIR /workspace
 
 # Copy requirements and install Python dependencies
-COPY requirements.txt /requirements.txt
+COPY requirements.txt /workspace/
 RUN pip3 install --no-cache-dir --upgrade pip
+RUN pip3 install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy application files
-COPY rp_handler.py /
-COPY config.py /
-COPY model_download.py /
+COPY . /workspace/
 
 # Create models directory
-RUN mkdir -p /models
+RUN mkdir -p /workspace/models
 
 # Set proper permissions
-RUN chmod +x /rp_handler.py
+RUN chmod +x /workspace/rp_handler.py
 
-# Start the container - modify to download models at runtime
+# Start the container
 CMD python3 model_download.py && python3 -u rp_handler.py

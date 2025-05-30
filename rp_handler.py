@@ -44,7 +44,15 @@ def load_models():
     print("Loading FantasyTalking models...")
 
     try:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Check CUDA availability
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        if torch.cuda.is_available():
+            print(f"CUDA device count: {torch.cuda.device_count()}")
+            print(f"CUDA device name: {torch.cuda.get_device_name(0)}")
+            device = "cuda"
+        else:
+            print("No CUDA device available, using CPU")
+            device = "cpu"
         print(f"Using device: {device}")
 
         # First verify model paths exist
@@ -73,10 +81,14 @@ def load_models():
         print("Loading Wan2.1 pipeline...")
         pipeline = DiffusionPipeline.from_pretrained(
             str(WAN_MODEL_PATH),
-            torch_dtype=torch.bfloat16 if device == "cuda" else torch.float32,
-            use_safetensors=True
-        )
-        pipeline.to(device)
+            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+            use_safetensors=True,
+            device_map="auto"
+        ).to(device)
+        
+        # Enable memory efficient attention if available
+        if hasattr(pipeline, 'enable_xformers_memory_efficient_attention'):
+            pipeline.enable_xformers_memory_efficient_attention()
 
         if MEMORY_OPTIMIZATION["enable_attention_slicing"]:
             pipeline.enable_attention_slicing()
