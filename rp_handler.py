@@ -47,15 +47,27 @@ def load_models():
         device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"Using device: {device}")
 
+        # First verify model paths exist
+        print(f"Checking WAV2VEC_MODEL_PATH: {WAV2VEC_MODEL_PATH}")
+        if not os.path.exists(str(WAV2VEC_MODEL_PATH)):
+            raise ValueError(f"WAV2VEC_MODEL_PATH does not exist: {WAV2VEC_MODEL_PATH}")
+
         # Load Wav2Vec2 for audio processing
         print("Loading Wav2Vec2 model...")
-        wav2vec_processor = Wav2Vec2Processor.from_pretrained(str(WAV2VEC_MODEL_PATH))
-        if wav2vec_processor is None:
-            raise ValueError("Wav2Vec2Processor failed to load.")
-        wav2vec_model = Wav2Vec2Model.from_pretrained(str(WAV2VEC_MODEL_PATH))
-        if wav2vec_model is None:
-            raise ValueError("Wav2Vec2Model failed to load.")
-        wav2vec_model.to(device)
+        try:
+            wav2vec_processor = Wav2Vec2Processor.from_pretrained(str(WAV2VEC_MODEL_PATH))
+            if wav2vec_processor is None:
+                raise ValueError("Wav2Vec2Processor failed to load.")
+        except Exception as e:
+            raise ValueError(f"Failed to load Wav2Vec2Processor: {str(e)}")
+
+        try:
+            wav2vec_model = Wav2Vec2Model.from_pretrained(str(WAV2VEC_MODEL_PATH))
+            if wav2vec_model is None:
+                raise ValueError("Wav2Vec2Model failed to load.")
+            wav2vec_model.to(device)
+        except Exception as e:
+            raise ValueError(f"Failed to load Wav2Vec2Model: {str(e)}")
 
         # Load base video generation pipeline
         print("Loading Wan2.1 pipeline...")
@@ -77,7 +89,10 @@ def load_models():
     except Exception as e:
         print(f"✗ Error loading models: {e}")
         traceback.print_exc()
-        return False    
+        return False
+
+
+
 def process_image(image_data: str) -> Optional[Image.Image]:
     """Process base64 image input"""
     try:

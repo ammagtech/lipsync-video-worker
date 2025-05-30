@@ -41,7 +41,7 @@ COPY config.py /
 COPY model_download.py /
 
 # Download models during build (optional - can be done at runtime)
-# RUN python3 model_download.py
+RUN python3 model_download.py
 
 # Create models directory
 RUN mkdir -p /models

@@ -33,22 +33,23 @@ def download_wan_model(models_dir):
         return False
     return True
 
-def download_wav2vec_model(models_dir):
-    """Download Wav2Vec2 audio encoder"""
-    print("Downloading Wav2Vec2 model...")
-    wav2vec_dir = models_dir / "wav2vec2-base-960h"
-    
+def download_wav2vec2_model(models_dir):
+    """Download wav2vec2-base-960h model"""
+    print("Downloading wav2vec2-base-960h model...")
     try:
+        wav2vec_path = models_dir / "wav2vec2-base-960h"
+        wav2vec_path.mkdir(exist_ok=True)
+        
         snapshot_download(
             repo_id="facebook/wav2vec2-base-960h",
-            local_dir=str(wav2vec_dir),
+            local_dir=str(wav2vec_path),
             local_dir_use_symlinks=False
         )
-        print("✓ Wav2Vec2 downloaded successfully")
+        print("✓ wav2vec2-base-960h model downloaded successfully")
+        return True
     except Exception as e:
-        print(f"✗ Failed to download Wav2Vec2: {e}")
+        print(f"✗ Error downloading wav2vec2-base-960h model: {e}")
         return False
-    return True
 
 def download_fantasytalking_model(models_dir):
     """Download FantasyTalking checkpoint"""
@@ -90,4 +91,14 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    models_dir = create_models_dir()
+    success = True
+    
+    # Download all required models
+    success &= download_wan_model(models_dir)
+    success &= download_wav2vec2_model(models_dir)
+    
+    if not success:
+        print("✗ Some models failed to download")
+        sys.exit(1)
+    print("✓ All models downloaded successfully")
