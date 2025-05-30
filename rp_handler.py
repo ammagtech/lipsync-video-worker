@@ -196,7 +196,9 @@ def generate_talking_video(image: Image.Image, audio_features: torch.Tensor, pro
         audio_cfg_scale = kwargs.get('audio_cfg_scale', DEFAULT_CONFIG['audio_cfg_scale'])
         num_frames = kwargs.get('num_frames', DEFAULT_CONFIG['num_frames'])
 
-        print(f"Generating video with {num_frames} frames...")
+        print(f"Generating talking video with {num_frames} frames...")
+        print(f"Using guidance scale: {guidance_scale}, audio scale: {audio_cfg_scale}")
+        print(f"Audio feature shape: {audio_features.shape}")
 
         # Convert image to tensor
         image_tensor = torch.from_numpy(np.array(image)).permute(2, 0, 1).unsqueeze(0).float() / 255.0
@@ -205,6 +207,9 @@ def generate_talking_video(image: Image.Image, audio_features: torch.Tensor, pro
 
         # Generate video frames using the pipeline
         with torch.no_grad():
+            # Move audio features to the same device as the pipeline
+            audio_features = audio_features.to(device)
+            
             # Generate frames with the pipeline
             output = pipeline(
                 image=image_tensor,
@@ -223,6 +228,8 @@ def generate_talking_video(image: Image.Image, audio_features: torch.Tensor, pro
             video = (video * 255).astype(np.uint8)
             # Convert from CxTxHxW to TxHxWxC
             video = video.transpose(1, 2, 3, 0)
+            
+            print(f"Generated video shape: {video.shape}")
 
         return video
 
