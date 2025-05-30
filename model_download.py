@@ -6,9 +6,22 @@ Downloads required models from HuggingFace and ModelScope
 
 import os
 import sys
+import time
 from pathlib import Path
 from huggingface_hub import hf_hub_download, snapshot_download
 from modelscope import snapshot_download as ms_snapshot_download
+
+def download_with_retry(download_func, max_retries=3):
+    """Wrapper to retry downloads with exponential backoff"""
+    for attempt in range(max_retries):
+        try:
+            return download_func()
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise e
+            wait_time = 2 ** attempt
+            print(f"Download failed, retrying in {wait_time} seconds...")
+            time.sleep(wait_time)
 
 def create_models_dir():
     """Create models directory structure"""
@@ -22,16 +35,18 @@ def download_wan_model(models_dir):
     wan_dir = models_dir / "Wan2.1-I2V-14B-720P"
     
     try:
-        snapshot_download(
-            repo_id="Wan-AI/Wan2.1-I2V-14B-720P",
-            local_dir=str(wan_dir),
-            local_dir_use_symlinks=False
-        )
+        def download():
+            return snapshot_download(
+                repo_id="Wan-AI/Wan2.1-I2V-14B-720P",
+                local_dir=str(wan_dir),
+                local_dir_use_symlinks=False
+            )
+        download_with_retry(download)
         print("✓ Wan2.1-I2V-14B-720P downloaded successfully")
+        return True
     except Exception as e:
         print(f"✗ Failed to download Wan2.1-I2V-14B-720P: {e}")
         return False
-    return True
 
 def download_wav2vec2_model(models_dir):
     """Download wav2vec2-base-960h model"""
@@ -40,11 +55,13 @@ def download_wav2vec2_model(models_dir):
         wav2vec_path = models_dir / "wav2vec2-base-960h"
         wav2vec_path.mkdir(exist_ok=True)
         
-        snapshot_download(
-            repo_id="facebook/wav2vec2-base-960h",
-            local_dir=str(wav2vec_path),
-            local_dir_use_symlinks=False
-        )
+        def download():
+            return snapshot_download(
+                repo_id="facebook/wav2vec2-base-960h",
+                local_dir=str(wav2vec_path),
+                local_dir_use_symlinks=False
+            )
+        download_with_retry(download)
         print("✓ wav2vec2-base-960h model downloaded successfully")
         return True
     except Exception as e:
@@ -58,17 +75,19 @@ def download_fantasytalking_model(models_dir):
     ft_dir.mkdir(exist_ok=True)
     
     try:
-        hf_hub_download(
-            repo_id="acvlab/FantasyTalking",
-            filename="fantasytalking_model.ckpt",
-            local_dir=str(ft_dir),
-            local_dir_use_symlinks=False
-        )
+        def download():
+            return hf_hub_download(
+                repo_id="acvlab/FantasyTalking",
+                filename="fantasytalking_model.ckpt",
+                local_dir=str(ft_dir),
+                local_dir_use_symlinks=False
+            )
+        download_with_retry(download)
         print("✓ FantasyTalking model downloaded successfully")
+        return True
     except Exception as e:
         print(f"✗ Failed to download FantasyTalking model: {e}")
         return False
-    return True
 
 def main():
     """Main download function"""

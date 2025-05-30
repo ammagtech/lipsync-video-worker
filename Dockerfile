@@ -24,8 +24,7 @@ RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     libfontconfig1 \
     libxrender1 \
-    libgomp1 \
-    || (cat /var/log/apt/term.log || true)
+    libgomp1
 
 # Set working directory
 WORKDIR /
@@ -40,14 +39,11 @@ COPY rp_handler.py /
 COPY config.py /
 COPY model_download.py /
 
-# Download models during build (optional - can be done at runtime)
-RUN python3 model_download.py
-
 # Create models directory
 RUN mkdir -p /models
 
 # Set proper permissions
 RUN chmod +x /rp_handler.py
 
-# Start the container
-CMD ["python3", "-u", "rp_handler.py"]
+# Start the container - modify to download models at runtime
+CMD python3 model_download.py && python3 -u rp_handler.py
