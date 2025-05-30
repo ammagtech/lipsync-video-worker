@@ -180,25 +180,31 @@ def generate_talking_video(image: Image.Image, audio_features: torch.Tensor, pro
 
         print(f"Generating video with {num_frames} frames...")
 
-        # This is a simplified version - the actual FantasyTalking implementation
-        # would require the specific model architecture and conditioning mechanisms
-        # For now, we'll use the base pipeline with audio conditioning
-
         # Convert image to tensor
         image_tensor = torch.from_numpy(np.array(image)).permute(2, 0, 1).unsqueeze(0).float() / 255.0
+        device = next(pipeline.parameters()).device
+        image_tensor = image_tensor.to(device)
 
-        # Generate video frames
+        # Generate video frames using the pipeline
         with torch.no_grad():
-            # This would be replaced with actual FantasyTalking inference
-            # For demonstration, we'll create a simple video sequence
-            frames = []
-            for i in range(num_frames):
-                # In real implementation, this would use the audio features
-                # to condition the video generation
-                frame = np.array(image)
-                frames.append(frame)
-
-            video = np.stack(frames, axis=0)
+            # Generate frames with the pipeline
+            output = pipeline(
+                image=image_tensor,
+                audio_features=audio_features,
+                prompt=prompt,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                audio_cfg_scale=audio_cfg_scale,
+                prompt_cfg_scale=prompt_cfg_scale,
+                num_frames=num_frames
+            )
+            
+            # Convert generated frames to numpy array
+            video = output.videos[0].cpu().numpy()
+            # Convert from [0,1] float to [0,255] uint8
+            video = (video * 255).astype(np.uint8)
+            # Convert from CxTxHxW to TxHxWxC
+            video = video.transpose(1, 2, 3, 0)
 
         return video
 
@@ -221,6 +227,9 @@ def encode_video_to_base64(video: np.ndarray, fps: int = 8) -> Optional[str]:
 
         # Write frames
         for frame in video:
+            # Ensure frame is uint8 and in correct color format
+            if frame.dtype != np.uint8:
+                frame = (frame * 255).astype(np.uint8)
             # Convert RGB to BGR for OpenCV
             frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             out.write(frame_bgr)
@@ -241,6 +250,7 @@ def encode_video_to_base64(video: np.ndarray, fps: int = 8) -> Optional[str]:
 
     except Exception as e:
         print(f"Error encoding video: {e}")
+        traceback.print_exc()
         return None
 
 def handler(event):
