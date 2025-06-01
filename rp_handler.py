@@ -1,376 +1,45 @@
 import runpod
-import torch
+import time
 import base64
-import io
-import os
-import tempfile
-import cv2
-import numpy as np
-from PIL import Image
-import librosa
+from kokoro import KPipeline
 import soundfile as sf
-from pathlib import Path
-from typing import Dict, Any, Optional
-import traceback
-
-# Import FantasyTalking dependencies
-try:
-    from transformers import Wav2Vec2Processor, Wav2Vec2Model
-    from diffusers import DiffusionPipeline
-    import xformers
-except ImportError as e:
-    print(f"Warning: Some dependencies not available: {e}")
-
-from config import (
-    WAN_MODEL_PATH,
-    WAV2VEC_MODEL_PATH,
-    FANTASYTALKING_MODEL_PATH,
-    DEFAULT_CONFIG,
-    SUPPORTED_IMAGE_FORMATS,
-    SUPPORTED_AUDIO_FORMATS,
-    MEMORY_OPTIMIZATION,
-    OUTPUT_CONFIG
-)
-
-# Global variables for model loading
-pipeline = None
-wav2vec_processor = None
-wav2vec_model = None
-
-def load_models():
-    """Load all required models for FantasyTalking"""
-    global pipeline, wav2vec_processor, wav2vec_model
-
-    print("Loading FantasyTalking models...")
-
-    try:
-        # Check CUDA availability
-        print(f"CUDA available: {torch.cuda.is_available()}")
-        if torch.cuda.is_available():
-            print(f"CUDA device count: {torch.cuda.device_count()}")
-            print(f"CUDA device name: {torch.cuda.get_device_name(0)}")
-            print(f"CUDA memory allocated: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
-            print(f"CUDA memory cached: {torch.cuda.memory_reserved(0) / 1024**2:.2f} MB")
-            device = "cuda"
-            # Set default tensor type to CUDA
-            torch.set_default_tensor_type('torch.cuda.FloatTensor')
-        else:
-            print("No CUDA device available, using CPU")
-            device = "cpu"
-        print(f"Using device: {device}")
-
-        # First verify model paths exist
-        print(f"Checking WAV2VEC_MODEL_PATH: {WAV2VEC_MODEL_PATH}")
-        if not os.path.exists(str(WAV2VEC_MODEL_PATH)):
-            raise ValueError(f"WAV2VEC_MODEL_PATH does not exist: {WAV2VEC_MODEL_PATH}")
-
-        # Load Wav2Vec2 for audio processing
-        print("Loading Wav2Vec2 model...")
-        try:
-            wav2vec_processor = Wav2Vec2Processor.from_pretrained(str(WAV2VEC_MODEL_PATH))
-            if wav2vec_processor is None:
-                raise ValueError("Wav2Vec2Processor failed to load.")
-        except Exception as e:
-            raise ValueError(f"Failed to load Wav2Vec2Processor: {str(e)}")
-
-        try:
-            wav2vec_model = Wav2Vec2Model.from_pretrained(str(WAV2VEC_MODEL_PATH))
-            if wav2vec_model is None:
-                raise ValueError("Wav2Vec2Model failed to load.")
-            wav2vec_model.to(device)
-        except Exception as e:
-            raise ValueError(f"Failed to load Wav2Vec2Model: {str(e)}")
-
-        # Load base video generation pipeline
-        print("Loading Wan2.1 pipeline...")
-        pipeline = DiffusionPipeline.from_pretrained(
-            str(WAN_MODEL_PATH),
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-            use_safetensors=True,
-            device_map="auto"
-        ).to(device)
-        print(f"Pipeline device: {next(pipeline.parameters()).device}")
-        print(f"GPU Memory after loading pipeline: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
-        
-        # Enable memory efficient attention if available
-        if hasattr(pipeline, 'enable_xformers_memory_efficient_attention'):
-            pipeline.enable_xformers_memory_efficient_attention()
-
-        if MEMORY_OPTIMIZATION["enable_attention_slicing"]:
-            pipeline.enable_attention_slicing()
-        if MEMORY_OPTIMIZATION["enable_cpu_offload"] and device == "cuda":
-            pipeline.enable_model_cpu_offload()
-
-        print("✓ All models loaded successfully")
-        return True
-
-    except Exception as e:
-        print(f"✗ Error loading models: {e}")
-        traceback.print_exc()
-        return False
-
-
-
-def process_image(image_data: str) -> Optional[Image.Image]:
-    """Process base64 image input"""
-    try:
-        # Decode base64 image
-        image_bytes = base64.b64decode(image_data)
-        image = Image.open(io.BytesIO(image_bytes))
-
-        # Convert to RGB if needed
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-
-        # Resize to model requirements
-        target_size = (DEFAULT_CONFIG["width"], DEFAULT_CONFIG["height"])
-        image = image.resize(target_size, Image.Resampling.LANCZOS)
-
-        return image
-
-    except Exception as e:
-        print(f"Error processing image: {e}")
-        return None
-
-def process_audio(audio_data: str) -> Optional[np.ndarray]:
-    """Process base64 audio input"""
-    try:
-        # Decode base64 audio
-        audio_bytes = base64.b64decode(audio_data)
-
-        # Save to temporary file for librosa
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
-            temp_file.write(audio_bytes)
-            temp_path = temp_file.name
-
-        # Load audio with librosa
-        audio, sr = librosa.load(temp_path, sr=16000)  # Wav2Vec2 expects 16kHz
-
-        # Clean up temp file
-        os.unlink(temp_path)
-
-        return audio
-
-    except Exception as e:
-        print(f"Error processing audio: {e}")
-        return None
-
-def extract_audio_features(audio: np.ndarray) -> Optional[torch.Tensor]:
-    """Extract audio features using Wav2Vec2"""
-    global wav2vec_processor, wav2vec_model
-
-    # Check that the processor and model are loaded
-    if wav2vec_processor is None or wav2vec_model is None:
-        print("Error: Audio processor or model is not loaded.")
-        return None
-
-    try:
-        inputs = wav2vec_processor(
-            audio, 
-            sampling_rate=16000, 
-            return_tensors="pt", 
-            padding=True
-        )
-
-        device = next(wav2vec_model.parameters()).device
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-
-        with torch.no_grad():
-            outputs = wav2vec_model(**inputs)
-            audio_features = outputs.last_hidden_state
-
-        return audio_features
-
-    except Exception as e:
-        print(f"Error extracting audio features: {e}")
-        return None
-def generate_talking_video(image: Image.Image, audio_features: torch.Tensor, prompt: str = "", **kwargs) -> Optional[np.ndarray]:
-    """Generate talking video using FantasyTalking"""
-    try:
-        global pipeline
-
-        # Get generation parameters
-        num_inference_steps = kwargs.get('num_inference_steps', DEFAULT_CONFIG['num_inference_steps'])
-        guidance_scale = kwargs.get('guidance_scale', DEFAULT_CONFIG['guidance_scale'])
-        prompt_cfg_scale = kwargs.get('prompt_cfg_scale', DEFAULT_CONFIG['prompt_cfg_scale'])
-        audio_cfg_scale = kwargs.get('audio_cfg_scale', DEFAULT_CONFIG['audio_cfg_scale'])
-        num_frames = kwargs.get('num_frames', DEFAULT_CONFIG['num_frames'])
-
-        print(f"Generating talking video with {num_frames} frames...")
-        print(f"Using guidance scale: {guidance_scale}, audio scale: {audio_cfg_scale}")
-        print(f"Audio feature shape: {audio_features.shape}")
-
-        # Convert image to tensor
-        image_tensor = torch.from_numpy(np.array(image)).permute(2, 0, 1).unsqueeze(0).float() / 255.0
-        device = next(pipeline.parameters()).device
-        image_tensor = image_tensor.to(device)
-
-        # Generate video frames using the pipeline
-        with torch.no_grad():
-            # Move audio features to the same device as the pipeline
-            audio_features = audio_features.to(device)
-            
-            # Generate frames with the pipeline
-            output = pipeline(
-                image=image_tensor,
-                audio_features=audio_features,
-                prompt=prompt,
-                num_inference_steps=num_inference_steps,
-                guidance_scale=guidance_scale,
-                audio_cfg_scale=audio_cfg_scale,
-                prompt_cfg_scale=prompt_cfg_scale,
-                num_frames=num_frames
-            )
-            
-            # Convert generated frames to numpy array
-            video = output.videos[0].cpu().numpy()
-            # Convert from [0,1] float to [0,255] uint8
-            video = (video * 255).astype(np.uint8)
-            # Convert from CxTxHxW to TxHxWxC
-            video = video.transpose(1, 2, 3, 0)
-            
-            print(f"Generated video shape: {video.shape}")
-
-        return video
-
-    except Exception as e:
-        print(f"Error generating video: {e}")
-        traceback.print_exc()
-        return None
-
-def encode_video_to_base64(video: np.ndarray, fps: int = 8) -> Optional[str]:
-    """Encode video frames to base64 MP4"""
-    try:
-        # Create temporary file for video
-        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
-            temp_path = temp_file.name
-
-        # Set up video writer
-        height, width = video.shape[1:3]
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(temp_path, fourcc, fps, (width, height))
-
-        # Write frames
-        for frame in video:
-            # Ensure frame is uint8 and in correct color format
-            if frame.dtype != np.uint8:
-                frame = (frame * 255).astype(np.uint8)
-            # Convert RGB to BGR for OpenCV
-            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            out.write(frame_bgr)
-
-        out.release()
-
-        # Read video file and encode to base64
-        with open(temp_path, 'rb') as f:
-            video_bytes = f.read()
-
-        # Clean up temp file
-        os.unlink(temp_path)
-
-        # Encode to base64
-        video_base64 = base64.b64encode(video_bytes).decode('utf-8')
-
-        return video_base64
-
-    except Exception as e:
-        print(f"Error encoding video: {e}")
-        traceback.print_exc()
-        return None
+import torch
+import io
 
 def handler(event):
-    """Main RunPod handler function for FantasyTalking"""
-    print("FantasyTalking Worker Start")
+    print("Worker Start")
+    input = event['input']
 
-    try:
-        # Get input data
-        input_data = event['input']
+    prompt = input.get('prompt')
+    languageId = input.get('languageId', 'a')
+    voice = input.get('voiceType', 'af_heart')
 
-        # Required inputs
-        image_data = input_data.get('image')  # base64 encoded image
-        audio_data = input_data.get('audio')  # base64 encoded audio
+    print(f"Received prompt: {prompt}")
+    print(f"Language is: {languageId}")
 
-        if not image_data or not audio_data:
-            return {
-                "status": "error",
-                "message": "Both 'image' and 'audio' are required in base64 format"
-            }
+    pipeline = KPipeline(lang_code=languageId)
+    text = prompt
+    generator = pipeline(text, voice=voice)
 
-        # Optional inputs
-        prompt = input_data.get('prompt', "")
-        num_inference_steps = input_data.get('num_inference_steps', DEFAULT_CONFIG['num_inference_steps'])
-        guidance_scale = input_data.get('guidance_scale', DEFAULT_CONFIG['guidance_scale'])
-        prompt_cfg_scale = input_data.get('prompt_cfg_scale', DEFAULT_CONFIG['prompt_cfg_scale'])
-        audio_cfg_scale = input_data.get('audio_cfg_scale', DEFAULT_CONFIG['audio_cfg_scale'])
-        num_frames = input_data.get('num_frames', DEFAULT_CONFIG['num_frames'])
-        fps = input_data.get('fps', DEFAULT_CONFIG['fps'])
+    # Get first result only
+    i, (gs, ps, audio) = next(enumerate(generator))
+    print(i, gs, ps)
 
-        print(f"Processing request with prompt: '{prompt}'")
-        print(f"Parameters: steps={num_inference_steps}, guidance={guidance_scale}, frames={num_frames}")
+    # Save to memory buffer instead of file
+    buffer = io.BytesIO()
+    sf.write(buffer, audio, 24000, format='WAV')
+    buffer.seek(0)
 
-        # Process inputs
-        print("Processing image...")
-        image = process_image(image_data)
-        if image is None:
-            return {"status": "error", "message": "Failed to process image"}
+    # Encode as base64 for safe return
+    audio_base64 = base64.b64encode(buffer.read()).decode('utf-8')
 
-        print("Processing audio...")
-        audio = process_audio(audio_data)
-        if audio is None:
-            return {"status": "error", "message": "Failed to process audio"}
-
-        print("Extracting audio features...")
-        audio_features = extract_audio_features(audio)
-        if audio_features is None:
-            return {"status": "error", "message": "Failed to extract audio features"}
-
-        # Generate talking video
-        print("Generating talking video...")
-        video = generate_talking_video(
-            image=image,
-            audio_features=audio_features,
-            prompt=prompt,
-            num_inference_steps=num_inference_steps,
-            guidance_scale=guidance_scale,
-            prompt_cfg_scale=prompt_cfg_scale,
-            audio_cfg_scale=audio_cfg_scale,
-            num_frames=num_frames
-        )
-
-        if video is None:
-            return {"status": "error", "message": "Failed to generate video"}
-
-        print("Encoding video...")
-        video_base64 = encode_video_to_base64(video, fps=fps)
-        if video_base64 is None:
-            return {"status": "error", "message": "Failed to encode video"}
-
-        print("✓ Video generation completed successfully")
-
-        return {
-            "status": "success",
-            "video_base64": video_base64,
-            "prompt": prompt,
-            "num_frames": num_frames,
-            "fps": fps,
-            "format": "mp4",
-            "resolution": f"{DEFAULT_CONFIG['width']}x{DEFAULT_CONFIG['height']}"
-        }
-
-    except Exception as e:
-        print(f"Error in handler: {e}")
-        traceback.print_exc()
-        return {
-            "status": "error",
-            "message": f"Internal error: {str(e)}"
-        }
-
-# Initialize models on startup
-print("Initializing FantasyTalking models...")
-models_loaded = load_models()
-
-if not models_loaded:
-    print("⚠️  Warning: Models failed to load. Handler will return errors.")
+    return {
+        "status": "success",
+        "audio_base64": audio_base64,
+        "text": prompt,
+        "sample_rate": 24000,
+        "format": "wav"
+    }
 
 if __name__ == '__main__':
     runpod.serverless.start({'handler': handler})

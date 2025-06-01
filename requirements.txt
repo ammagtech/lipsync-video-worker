@@ -1,22 +1,5 @@
 runpod==1.7.7
-torch>=2.0.0
-torchvision
-torchaudio
-transformers>=4.25.0
-diffusers>=0.21.0
-accelerate
-safetensors
-huggingface_hub
-modelscope
-opencv-python
-pillow
-numpy
-scipy
-librosa
+kokoro>=0.9.4
 soundfile
-einops
-omegaconf
-xformers
-# flash-attn
-gradio
-spaces
+torch
+IPython

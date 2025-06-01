@@ -1,49 +1,9 @@
-# Use NVIDIA CUDA base image for GPU support
-FROM nvidia/cuda:11.8.0-devel-ubuntu22.04
+FROM python:3.10-slim
 
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV CUDA_HOME=/usr/local/cuda
-ENV PATH=${CUDA_HOME}/bin:${PATH}
-ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-dev \
-    git \
-    wget \
-    curl \
-    ffmpeg \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libglib2.0-0 \
-    libgl1-mesa-glx \
-    libfontconfig1 \
-    libxrender1 \
-    libgomp1 \
-    nvidia-cuda-toolkit
-
-# Set working directory
-WORKDIR /workspace
-
-# Copy requirements and install Python dependencies
-COPY requirements.txt /workspace/
-RUN pip3 install --no-cache-dir --upgrade pip
-RUN pip3 install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-RUN pip3 install --no-cache-dir -r requirements.txt
-
-# Copy application files
-COPY . /workspace/
-
-# Create models directory
-RUN mkdir -p /workspace/models
-
-# Set proper permissions
-RUN chmod +x /workspace/rp_handler.py
+WORKDIR /
+COPY requirements.txt /requirements.txt
+RUN pip install -r requirements.txt
+COPY rp_handler.py /
 
 # Start the container
-CMD python3 model_download.py && python3 -u rp_handler.py
+CMD ["python3", "-u", "rp_handler.py"]
