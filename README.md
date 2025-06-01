@@ -21,7 +21,23 @@ This implementation is based on:
 
 ## Input Format
 
-The worker expects the following input format:
+### **Test Mode (Quick Testing)**
+
+For quick testing without real image/audio data, simply use:
+
+```json
+{
+    "input": {
+        "prompt": "test"
+    }
+}
+```
+
+This automatically uses dummy data and optimized settings for fast testing.
+
+### **Full Input Format**
+
+For production use with real data:
 
 ```json
 {
@@ -41,11 +57,12 @@ The worker expects the following input format:
 
 ### Parameters
 
-- **image** (required): Base64 encoded image of the person
-- **audio** (required): Base64 encoded audio file for lip-sync
-- **prompt** (optional): Text description to guide video generation (default: "A person is talking.")
-- **image_size** (optional): Target image size for processing (default: 512)
-- **max_num_frames** (optional): Maximum number of frames to generate (default: 81)
+- **prompt** (required): Text description to guide video generation
+  - **Special value**: `"test"` - Activates test mode with dummy data
+- **image** (required*): Base64 encoded image of the person (*not required in test mode)
+- **audio** (required*): Base64 encoded audio file for lip-sync (*not required in test mode)
+- **image_size** (optional): Target image size for processing (default: 512, test mode: 384)
+- **max_num_frames** (optional): Maximum number of frames to generate (default: 81, test mode: 49)
 - **fps** (optional): Frames per second for output video (default: 23)
 - **prompt_cfg_scale** (optional): Prompt guidance scale (default: 5.0)
 - **audio_cfg_scale** (optional): Audio guidance scale (default: 5.0)
@@ -120,6 +137,33 @@ docker push your-dockerhub-username/fantasytalking-runpod:v1.0.0
    - `CUDA_VISIBLE_DEVICES=0`
    - `PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512`
 4. **Deploy** and test with the provided input format
+
+## Quick Testing
+
+### **Test Your Deployment**
+
+Once deployed, test immediately with this simple request:
+
+```json
+{
+    "input": {
+        "prompt": "test"
+    }
+}
+```
+
+This will:
+- ✅ Use dummy image and audio data (no need to upload files)
+- ✅ Use optimized settings for faster processing (384px, 49 frames)
+- ✅ Verify the entire pipeline works
+- ✅ Take ~2-3 minutes instead of 5-10 minutes
+
+### **Test Examples**
+
+See `test_examples.json` for various test configurations:
+- **Fast test**: 256px, 25 frames (~1 minute)
+- **Quality test**: 512px, 81 frames (~5 minutes)
+- **Custom settings**: Override any parameters
 
 ## Performance Notes
 
