@@ -295,7 +295,7 @@ def generate_lipsynced_video(
             cfg_scale=prompt_cfg_scale,
         
          
-            latents_num_frames=(num_frames - 1) // 4 + 1,
+            
         )
 
         # Save temporary video without audio
