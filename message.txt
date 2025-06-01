@@ -13,3 +13,7 @@ Model repository: https://huggingface.co/acvlab/FantasyTalking
 - Takes input image and audio, generates lip-synced video
 - GPU-accelerated with CUDA support
 - Ready for RunPod deployment
+
+
+2025-06-01 18:54:11 [ERROR] ERROR: failed to solve: nvidia/cuda:12.1-devel-ubuntu22.04: failed to resolve source metadata for docker.io/nvidia/cuda:12.1-devel-ubuntu22.04: docker.io/nvidia/cuda:12.1-devel-ubuntu22.04: not found
+2025-06-01 18:54:11 [ERROR] Build finished with wrong exit code: Please view the logs to find out what went wrong.
