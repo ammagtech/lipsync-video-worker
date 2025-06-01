@@ -15,5 +15,7 @@ Model repository: https://huggingface.co/acvlab/FantasyTalking
 - Ready for RunPod deployment
 
 
-2025-06-01 18:54:11 [ERROR] ERROR: failed to solve: nvidia/cuda:12.1-devel-ubuntu22.04: failed to resolve source metadata for docker.io/nvidia/cuda:12.1-devel-ubuntu22.04: docker.io/nvidia/cuda:12.1-devel-ubuntu22.04: not found
-2025-06-01 18:54:11 [ERROR] Build finished with wrong exit code: Please view the logs to find out what went wrong.
+2025-06-01 18:54:11 [ERROR] ERROR:2025-06-01 18:58:47 [ERROR] ERROR: failed to solve: nvidia/cuda:11.8-cudnn8-devel-ubuntu22.04: failed to resolve source metadata for docker.io/nvidia/cuda:11.8-cudnn8-devel-ubuntu22.04: docker.io/nvidia/cuda:11.8-cudnn8-devel-ubuntu22.04: not found
+2025-06-01 18:58:47 [ERROR] Build failed in the first attempt. Will retry one more time before exiting.
+
+2025-06-01 18:58:50 [ERROR] ERROR: failed to solve: nvidia/cuda:11.8-cudnn8-devel-ubuntu22.04: failed to resolve source metadata for docker.io/nvidia/cuda:11.8-cudnn8-devel-ubuntu22.04: docker.io/nvidia/cuda:11.8-cudnn8-devel-ubuntu22.04: not found

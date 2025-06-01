@@ -1,22 +1,12 @@
-# Use NVIDIA CUDA base image for GPU support
-# Alternative options if this fails:
-# FROM nvidia/cuda:12.0-devel-ubuntu22.04
-# FROM nvidia/cuda:11.8-devel-ubuntu20.04
-# FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-devel
-FROM nvidia/cuda:11.8-cudnn8-devel-ubuntu22.04
+# Use PyTorch base image with CUDA support (more reliable than nvidia/cuda)
+FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-devel
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV CUDA_HOME=/usr/local/cuda
-ENV PATH=${CUDA_HOME}/bin:${PATH}
-ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-dev \
     git \
     wget \
     curl \
@@ -35,11 +25,11 @@ WORKDIR /app
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt /app/requirements.txt
-RUN pip3 install --no-cache-dir --upgrade pip
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Install huggingface-cli for model downloads
-RUN pip3 install --no-cache-dir "huggingface_hub[cli]"
+RUN pip install --no-cache-dir "huggingface_hub[cli]"
 
 # Copy application files
 COPY rp_handler.py /app/
