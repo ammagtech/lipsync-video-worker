@@ -185,6 +185,45 @@ def save_base64_to_file(base64_string: str, output_path: str, file_type: str = '
         f.write(file_bytes)
 
 
+def debug_huggingface_setup():
+    """Debug HuggingFace setup and connectivity."""
+    import subprocess
+    import os
+
+    print("🔍 Debugging HuggingFace setup...")
+
+    # Check huggingface-cli version
+    try:
+        result = subprocess.run(["huggingface-cli", "--version"],
+                              capture_output=True, text=True, check=True)
+        print(f"✅ huggingface-cli version: {result.stdout.strip()}")
+    except Exception as e:
+        print(f"❌ huggingface-cli issue: {e}")
+        return False
+
+    # Check internet connectivity
+    try:
+        import urllib.request
+        urllib.request.urlopen('https://huggingface.co', timeout=10)
+        print("✅ Internet connectivity: OK")
+    except Exception as e:
+        print(f"❌ Internet connectivity issue: {e}")
+        return False
+
+    # Check disk space
+    import shutil
+    total, used, free = shutil.disk_usage("./")
+    free_gb = free // (1024**3)
+    print(f"💾 Free disk space: {free_gb} GB")
+
+    if free_gb < 40:
+        print("⚠️ Warning: Less than 40GB free space available")
+        return False
+
+    print("✅ HuggingFace setup looks good")
+    return True
+
+
 def download_models_if_needed():
     """
     Download required models if they don't exist locally.
@@ -192,9 +231,25 @@ def download_models_if_needed():
     """
     import subprocess
     import os
-    
+    import time
+
+    print("⚠️ Note: High CPU usage (80-100%) is normal during model downloads")
+    print("   This is due to file decompression and verification processes")
+
+    # Debug HuggingFace setup first
+    debug_huggingface_setup()
+
     models_dir = "./models"
     os.makedirs(models_dir, exist_ok=True)
+
+    # Set process priority to reduce CPU impact (Linux only)
+    try:
+        import psutil
+        current_process = psutil.Process()
+        current_process.nice(10)  # Lower priority
+        print("✅ Reduced process priority to minimize CPU impact")
+    except:
+        print("⚠️ Could not reduce process priority (psutil not available)")
     
     # Check and download Wan2.1 model
     wan_model_path = f"{models_dir}/Wan2.1-I2V-14B-720P"
@@ -211,11 +266,68 @@ def download_models_if_needed():
 
     if not wan_complete:
         print("Downloading Wan2.1-I2V-14B-720P model...")
-        subprocess.run([
-            "huggingface-cli", "download", "Wan-AI/Wan2.1-I2V-14B-720P",
-            "--local-dir", wan_model_path
-        ], check=True)
-        print("✅ Wan2.1 model download complete!")
+
+        # Try multiple download methods
+        download_success = False
+
+        # Method 1: Standard huggingface-cli
+        try:
+            print("   Trying method 1: Standard huggingface-cli...")
+            subprocess.run([
+                "huggingface-cli", "download", "Wan-AI/Wan2.1-I2V-14B-720P",
+                "--local-dir", wan_model_path,
+                "--local-dir-use-symlinks", "False"
+            ], check=True, timeout=1800)  # 30 minute timeout
+            download_success = True
+            print("✅ Wan2.1 model download complete (method 1)!")
+
+        except subprocess.CalledProcessError as e:
+            print(f"   ❌ Method 1 failed: {e}")
+
+        except subprocess.TimeoutExpired:
+            print("   ❌ Method 1 timed out")
+
+        # Method 2: Try with different flags
+        if not download_success:
+            try:
+                print("   Trying method 2: Alternative flags...")
+                subprocess.run([
+                    "huggingface-cli", "download", "Wan-AI/Wan2.1-I2V-14B-720P",
+                    "--local-dir", wan_model_path,
+                    "--resume-download"
+                ], check=True, timeout=1800)
+                download_success = True
+                print("✅ Wan2.1 model download complete (method 2)!")
+
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                print(f"   ❌ Method 2 failed: {e}")
+
+        # Method 3: Use Python API
+        if not download_success:
+            try:
+                print("   Trying method 3: Python huggingface_hub API...")
+                from huggingface_hub import snapshot_download
+
+                snapshot_download(
+                    repo_id="Wan-AI/Wan2.1-I2V-14B-720P",
+                    local_dir=wan_model_path,
+                    local_dir_use_symlinks=False,
+                    resume_download=True
+                )
+                download_success = True
+                print("✅ Wan2.1 model download complete (method 3)!")
+
+            except Exception as e:
+                print(f"   ❌ Method 3 failed: {e}")
+
+        if not download_success:
+            print("❌ All download methods failed for Wan2.1 model")
+            print("⚠️ This will cause the worker to fail. Please check:")
+            print("   - Internet connectivity")
+            print("   - HuggingFace access")
+            print("   - Disk space (need ~30GB)")
+            raise Exception("Failed to download Wan2.1 model after trying all methods")
+
     else:
         print("✅ Wan2.1 model already exists, skipping download")
 
@@ -225,11 +337,44 @@ def download_models_if_needed():
 
     if not os.path.exists(wav2vec_config):
         print("Downloading wav2vec2-base-960h model...")
-        subprocess.run([
-            "huggingface-cli", "download", "facebook/wav2vec2-base-960h",
-            "--local-dir", wav2vec_path
-        ], check=True)
-        print("✅ Wav2Vec model download complete!")
+
+        wav2vec_success = False
+
+        # Try multiple methods for Wav2Vec
+        try:
+            print("   Trying huggingface-cli for Wav2Vec...")
+            subprocess.run([
+                "huggingface-cli", "download", "facebook/wav2vec2-base-960h",
+                "--local-dir", wav2vec_path,
+                "--local-dir-use-symlinks", "False"
+            ], check=True, timeout=600)  # 10 minute timeout
+            wav2vec_success = True
+            print("✅ Wav2Vec model download complete!")
+
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            print(f"   ❌ CLI method failed: {e}")
+
+            # Try Python API
+            try:
+                print("   Trying Python API for Wav2Vec...")
+                from huggingface_hub import snapshot_download
+
+                snapshot_download(
+                    repo_id="facebook/wav2vec2-base-960h",
+                    local_dir=wav2vec_path,
+                    local_dir_use_symlinks=False,
+                    resume_download=True
+                )
+                wav2vec_success = True
+                print("✅ Wav2Vec model download complete (Python API)!")
+
+            except Exception as e2:
+                print(f"   ❌ Python API also failed: {e2}")
+
+        if not wav2vec_success:
+            print("❌ Failed to download Wav2Vec model")
+            raise Exception("Failed to download Wav2Vec model")
+
     else:
         print("✅ Wav2Vec model already exists, skipping download")
 

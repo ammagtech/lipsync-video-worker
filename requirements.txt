@@ -14,3 +14,4 @@ accelerate
 diffusers
 imageio
 modelscope
+psutil

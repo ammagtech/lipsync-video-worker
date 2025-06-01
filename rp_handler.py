@@ -69,6 +69,16 @@ def load_models():
     global pipe, fantasytalking, wav2vec_processor, wav2vec
 
     print("Loading models...")
+    print("⚠️ Note: High CPU usage is normal during model loading (2-3 minutes)")
+
+    # Monitor CPU usage
+    try:
+        import psutil
+        cpu_percent = psutil.cpu_percent(interval=1)
+        memory_info = psutil.virtual_memory()
+        print(f"📊 Current CPU: {cpu_percent}%, Memory: {memory_info.percent}%")
+    except:
+        pass
 
     # Download models if needed
     download_models_if_needed()
@@ -79,7 +89,11 @@ def load_models():
     fantasytalking_model_path = "./models/fantasytalking_model.ckpt"
 
     # Load Wan I2V models
-    print("Loading Wan I2V models...")
+    print("Loading Wan I2V models... (This will use high CPU for 2-3 minutes)")
+
+    # Set CPU optimization for model loading
+    torch.set_num_threads(min(8, torch.get_num_threads()))  # Limit CPU threads
+
     model_manager = ModelManager(device="cpu")
     model_manager.load_models(
         [
@@ -98,6 +112,8 @@ def load_models():
         ],
         torch_dtype=torch.bfloat16,
     )
+
+    print("✅ Wan I2V models loaded, CPU usage should decrease now")
 
     pipe = WanVideoPipeline.from_model_manager(
         model_manager, torch_dtype=torch.bfloat16, device="cuda"
