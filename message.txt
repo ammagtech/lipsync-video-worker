@@ -1,0 +1,15 @@
+FantasyTalking RunPod Worker - Realistic Lip-Sync Video Generation
+
+This worker generates talking portrait videos with accurate lip synchronization using FantasyTalking AI model.
+
+Original FantasyTalking: https://github.com/Fantasy-AMAP/fantasy-talking
+RunPod Documentation: https://docs.runpod.io/serverless/workers/
+
+Updated to use FantasyTalking for lip-sync video generation instead of basic TTS.
+
+Model repository: https://huggingface.co/acvlab/FantasyTalking
+
+✅ COMPLETED: Updated all files for FantasyTalking lip-sync video generation
+- Takes input image and audio, generates lip-synced video
+- GPU-accelerated with CUDA support
+- Ready for RunPod deployment
