@@ -296,7 +296,6 @@ def generate_lipsynced_video(
             num_inference_steps=30,
             seed=seed,
             tiled=True,
-            audio_scale=1.0,
             cfg_scale=prompt_cfg_scale,
             audio_cfg_scale=audio_cfg_scale,
             audio_proj=audio_proj_split,
