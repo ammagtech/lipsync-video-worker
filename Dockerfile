@@ -39,6 +39,10 @@ COPY utils.py /app/
 # Create models directory
 RUN mkdir -p /app/models
 
+# Optional: Pre-download models during build (uncomment to enable)
+# This will make the Docker image ~32GB larger but eliminates first-request delay
+# RUN python3 -c "from utils import download_models_if_needed; download_models_if_needed()"
+
 # Set Python path
 ENV PYTHONPATH=/app:$PYTHONPATH
 

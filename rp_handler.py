@@ -26,7 +26,8 @@ from utils import (
     encode_video_to_base64,
     decode_base64_to_image,
     save_base64_to_file,
-    download_models_if_needed
+    download_models_if_needed,
+    check_model_cache_status
 )
 
 # Global variables to store loaded models
@@ -77,7 +78,11 @@ def load_models():
     # Load FantasyTalking weights
     print("Loading FantasyTalking model...")
     fantasytalking = FantasyTalkingAudioConditionModel(pipe.dit, 768, 2048).to("cuda")
-    fantasytalking.load_audio_processor(fantasytalking_model_path, pipe.dit)
+
+    # Try to load the weights, but continue even if it fails
+    weights_loaded = fantasytalking.load_audio_processor(fantasytalking_model_path, pipe.dit)
+    if not weights_loaded:
+        print("⚠️ FantasyTalking will use random weights - results may be suboptimal")
 
     # Enable VRAM management for efficiency
     pipe.enable_vram_management(num_persistent_param_in_dit=0)  # Minimal VRAM usage

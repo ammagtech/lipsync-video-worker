@@ -1,5 +1,6 @@
 # Copyright Alibaba Inc. All Rights Reserved.
 
+import os
 import torch
 import torch.nn as nn
 from typing import Optional, List, Tuple
@@ -35,22 +36,36 @@ class FantasyTalkingAudioConditionModel(nn.Module):
         
     def load_audio_processor(self, checkpoint_path: str, dit_model):
         """Load the audio processor weights from checkpoint."""
+        if not checkpoint_path or not os.path.exists(checkpoint_path):
+            print(f"⚠️ Checkpoint file not found: {checkpoint_path}")
+            print("Using randomly initialized weights for FantasyTalking model.")
+            return False
+
         try:
+            print(f"Loading FantasyTalking weights from: {checkpoint_path}")
             checkpoint = torch.load(checkpoint_path, map_location='cpu')
-            
+
             # Extract audio-related weights from checkpoint
             audio_state_dict = {}
             for key, value in checkpoint.items():
                 if 'audio' in key.lower() or 'proj' in key.lower():
                     audio_state_dict[key] = value
-            
+
             # Load the state dict with strict=False to allow partial loading
-            self.load_state_dict(audio_state_dict, strict=False)
-            print(f"Successfully loaded audio processor from {checkpoint_path}")
-            
+            missing_keys, unexpected_keys = self.load_state_dict(audio_state_dict, strict=False)
+
+            if missing_keys:
+                print(f"⚠️ Missing keys in checkpoint: {len(missing_keys)} keys")
+            if unexpected_keys:
+                print(f"⚠️ Unexpected keys in checkpoint: {len(unexpected_keys)} keys")
+
+            print(f"✅ Successfully loaded audio processor from {checkpoint_path}")
+            return True
+
         except Exception as e:
-            print(f"Warning: Could not load audio processor weights: {e}")
+            print(f"❌ Error loading audio processor weights: {e}")
             print("Using randomly initialized weights.")
+            return False
     
     def get_proj_fea(self, audio_features: torch.Tensor) -> torch.Tensor:
         """

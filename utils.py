@@ -198,30 +198,132 @@ def download_models_if_needed():
     
     # Check and download Wan2.1 model
     wan_model_path = f"{models_dir}/Wan2.1-I2V-14B-720P"
-    if not os.path.exists(wan_model_path):
+    wan_model_files = [
+        "diffusion_pytorch_model-00001-of-00007.safetensors",
+        "diffusion_pytorch_model-00007-of-00007.safetensors",
+        "models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth",
+        "models_t5_umt5-xxl-enc-bf16.pth",
+        "Wan2.1_VAE.pth"
+    ]
+
+    # Check if all required files exist
+    wan_complete = all(os.path.exists(os.path.join(wan_model_path, f)) for f in wan_model_files)
+
+    if not wan_complete:
         print("Downloading Wan2.1-I2V-14B-720P model...")
         subprocess.run([
             "huggingface-cli", "download", "Wan-AI/Wan2.1-I2V-14B-720P",
             "--local-dir", wan_model_path
         ], check=True)
-    
+        print("✅ Wan2.1 model download complete!")
+    else:
+        print("✅ Wan2.1 model already exists, skipping download")
+
     # Check and download Wav2Vec model
     wav2vec_path = f"{models_dir}/wav2vec2-base-960h"
-    if not os.path.exists(wav2vec_path):
+    wav2vec_config = os.path.join(wav2vec_path, "config.json")
+
+    if not os.path.exists(wav2vec_config):
         print("Downloading wav2vec2-base-960h model...")
         subprocess.run([
             "huggingface-cli", "download", "facebook/wav2vec2-base-960h",
             "--local-dir", wav2vec_path
         ], check=True)
-    
+        print("✅ Wav2Vec model download complete!")
+    else:
+        print("✅ Wav2Vec model already exists, skipping download")
+
     # Check and download FantasyTalking model
     fantasy_model_path = f"{models_dir}/fantasytalking_model.ckpt"
     if not os.path.exists(fantasy_model_path):
         print("Downloading FantasyTalking model...")
-        subprocess.run([
-            "huggingface-cli", "download", "acvlab/FantasyTalking",
-            "--files", "fantasytalking_model.ckpt",
-            "--local-dir", models_dir
-        ], check=True)
+        try:
+            # Try method 1: Direct file download
+            subprocess.run([
+                "huggingface-cli", "download", "acvlab/FantasyTalking",
+                "fantasytalking_model.ckpt",
+                "--local-dir", models_dir
+            ], check=True)
+            print("✅ FantasyTalking model download complete!")
+        except subprocess.CalledProcessError:
+            print("⚠️ Method 1 failed, trying alternative download method...")
+            try:
+                # Try method 2: Download to specific directory
+                fantasy_dir = f"{models_dir}/FantasyTalking"
+                subprocess.run([
+                    "huggingface-cli", "download", "acvlab/FantasyTalking",
+                    "--local-dir", fantasy_dir
+                ], check=True)
+
+                # Move the file to the expected location
+                import shutil
+                source_file = f"{fantasy_dir}/fantasytalking_model.ckpt"
+                if os.path.exists(source_file):
+                    shutil.move(source_file, fantasy_model_path)
+                    print("✅ FantasyTalking model download complete (method 2)!")
+                else:
+                    print("❌ FantasyTalking model file not found after download")
+
+            except subprocess.CalledProcessError as e:
+                print(f"❌ FantasyTalking model download failed: {e}")
+                print("⚠️ Continuing without FantasyTalking weights (will use random initialization)")
+
+                # Create an empty file to indicate we tried and failed
+                try:
+                    with open(f"{models_dir}/fantasytalking_download_failed.txt", "w") as f:
+                        f.write("FantasyTalking model download failed. Using random initialization.")
+                except:
+                    pass
+    else:
+        print("✅ FantasyTalking model already exists, skipping download")
     
     print("All models are ready!")
+
+
+def check_model_cache_status():
+    """Check and print the status of cached models."""
+    models_dir = "./models"
+
+    print("🔍 Checking model cache status...")
+
+    # Check Wan2.1 model
+    wan_model_path = f"{models_dir}/Wan2.1-I2V-14B-720P"
+    wan_model_files = [
+        "diffusion_pytorch_model-00001-of-00007.safetensors",
+        "diffusion_pytorch_model-00007-of-00007.safetensors",
+        "models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth",
+        "models_t5_umt5-xxl-enc-bf16.pth",
+        "Wan2.1_VAE.pth"
+    ]
+
+    wan_files_exist = [os.path.exists(os.path.join(wan_model_path, f)) for f in wan_model_files]
+    wan_complete = all(wan_files_exist)
+
+    print(f"📁 Wan2.1 model directory: {wan_model_path}")
+    print(f"✅ Wan2.1 complete: {wan_complete} ({sum(wan_files_exist)}/{len(wan_model_files)} files)")
+
+    # Check Wav2Vec model
+    wav2vec_path = f"{models_dir}/wav2vec2-base-960h"
+    wav2vec_exists = os.path.exists(os.path.join(wav2vec_path, "config.json"))
+    print(f"📁 Wav2Vec model directory: {wav2vec_path}")
+    print(f"✅ Wav2Vec complete: {wav2vec_exists}")
+
+    # Check FantasyTalking model
+    fantasy_model_path = f"{models_dir}/fantasytalking_model.ckpt"
+    fantasy_exists = os.path.exists(fantasy_model_path)
+    print(f"📁 FantasyTalking model file: {fantasy_model_path}")
+    print(f"✅ FantasyTalking complete: {fantasy_exists}")
+
+    # Calculate total size
+    total_size = 0
+    if os.path.exists(models_dir):
+        for root, dirs, files in os.walk(models_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                if os.path.exists(file_path):
+                    total_size += os.path.getsize(file_path)
+
+    total_size_gb = total_size / (1024**3)
+    print(f"💾 Total models size: {total_size_gb:.2f} GB")
+
+    return wan_complete and wav2vec_exists and fantasy_exists
