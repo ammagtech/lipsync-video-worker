@@ -294,7 +294,7 @@ def generate_lipsynced_video(
             tiled=True,
             cfg_scale=prompt_cfg_scale,
         
-            audio_proj=audio_proj_split,
+         
             audio_context_lens=audio_context_lens,
             latents_num_frames=(num_frames - 1) // 4 + 1,
         )
