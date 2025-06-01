@@ -152,7 +152,6 @@ def handler(event):
             "max_num_frames": 81,
             "fps": 23,
             "prompt_cfg_scale": 5.0,
-            "audio_cfg_scale": 5.0,
             "seed": 1111
         }
     }
@@ -175,7 +174,6 @@ def handler(event):
     max_num_frames = input_data.get('max_num_frames', 81)
     fps = input_data.get('fps', 23)
     prompt_cfg_scale = input_data.get('prompt_cfg_scale', 5.0)
-    audio_cfg_scale = input_data.get('audio_cfg_scale', 5.0)
     seed = input_data.get('seed', 1111)
 
     # Test mode: Use dummy data if prompt is "test"
@@ -218,7 +216,6 @@ def handler(event):
                 max_num_frames=max_num_frames,
                 fps=fps,
                 prompt_cfg_scale=prompt_cfg_scale,
-                audio_cfg_scale=audio_cfg_scale,
                 seed=seed,
                 output_dir=temp_dir
             )
@@ -240,7 +237,6 @@ def generate_lipsynced_video(
     max_num_frames: int = 81,
     fps: int = 23,
     prompt_cfg_scale: float = 5.0,
-    audio_cfg_scale: float = 5.0,
     seed: int = 1111,
     output_dir: str = "./output"
 ) -> dict:
@@ -297,7 +293,7 @@ def generate_lipsynced_video(
             seed=seed,
             tiled=True,
             cfg_scale=prompt_cfg_scale,
-            audio_cfg_scale=audio_cfg_scale,
+        
             audio_proj=audio_proj_split,
             audio_context_lens=audio_context_lens,
             latents_num_frames=(num_frames - 1) // 4 + 1,
