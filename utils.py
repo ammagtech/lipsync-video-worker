@@ -220,6 +220,28 @@ def debug_huggingface_setup():
         print("⚠️ Warning: Less than 40GB free space available")
         return False
 
+    # Test specific model access
+    try:
+        print("🧪 Testing access to Wan-AI/Wan2.1-I2V-14B-720P...")
+        result = subprocess.run([
+            "huggingface-cli", "download", "Wan-AI/Wan2.1-I2V-14B-720P",
+            "README.md", "--local-dir", "./test_access"
+        ], check=True, timeout=60, capture_output=True, text=True)
+
+        # Clean up test
+        import shutil
+        shutil.rmtree("./test_access", ignore_errors=True)
+        print("✅ Model access test successful")
+
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Model access test failed: {e}")
+        if e.stderr:
+            print(f"   Error details: {e.stderr[:200]}...")
+        return False
+    except subprocess.TimeoutExpired:
+        print("❌ Model access test timed out")
+        return False
+
     print("✅ HuggingFace setup looks good")
     return True
 
@@ -273,19 +295,23 @@ def download_models_if_needed():
         # Method 1: Standard huggingface-cli
         try:
             print("   Trying method 1: Standard huggingface-cli...")
-            subprocess.run([
+            result = subprocess.run([
                 "huggingface-cli", "download", "Wan-AI/Wan2.1-I2V-14B-720P",
                 "--local-dir", wan_model_path,
                 "--local-dir-use-symlinks", "False"
-            ], check=True, timeout=1800)  # 30 minute timeout
+            ], check=True, timeout=1800, capture_output=True, text=True)  # 30 minute timeout
             download_success = True
             print("✅ Wan2.1 model download complete (method 1)!")
 
         except subprocess.CalledProcessError as e:
-            print(f"   ❌ Method 1 failed: {e}")
+            print(f"   ❌ Method 1 failed with exit code {e.returncode}")
+            if e.stdout:
+                print(f"   STDOUT: {e.stdout[:500]}...")
+            if e.stderr:
+                print(f"   STDERR: {e.stderr[:500]}...")
 
         except subprocess.TimeoutExpired:
-            print("   ❌ Method 1 timed out")
+            print("   ❌ Method 1 timed out after 30 minutes")
 
         # Method 2: Try with different flags
         if not download_success:
@@ -320,13 +346,34 @@ def download_models_if_needed():
             except Exception as e:
                 print(f"   ❌ Method 3 failed: {e}")
 
+        # Method 4: Try git clone as last resort
+        if not download_success:
+            try:
+                print("   Trying method 4: Git clone...")
+                import subprocess
+                subprocess.run([
+                    "git", "clone",
+                    "https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P",
+                    wan_model_path
+                ], check=True, timeout=3600)  # 1 hour timeout
+                download_success = True
+                print("✅ Wan2.1 model download complete (method 4 - git)!")
+
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+                print(f"   ❌ Method 4 failed: {e}")
+
         if not download_success:
             print("❌ All download methods failed for Wan2.1 model")
-            print("⚠️ This will cause the worker to fail. Please check:")
-            print("   - Internet connectivity")
-            print("   - HuggingFace access")
-            print("   - Disk space (need ~30GB)")
-            raise Exception("Failed to download Wan2.1 model after trying all methods")
+            print("⚠️ Possible solutions:")
+            print("   1. Check internet connectivity")
+            print("   2. Check HuggingFace access (may need authentication)")
+            print("   3. Check disk space (need ~30GB)")
+            print("   4. Try again later (HuggingFace may be temporarily down)")
+            print("   5. Use a different RunPod region")
+
+            # Don't fail immediately - try to continue with other models
+            print("⚠️ Continuing without Wan2.1 model - this will likely cause inference to fail")
+            print("   But other models will still be downloaded for debugging")
 
     else:
         print("✅ Wan2.1 model already exists, skipping download")
