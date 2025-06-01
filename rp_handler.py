@@ -10,13 +10,41 @@ from PIL import Image
 from transformers import Wav2Vec2Model, Wav2Vec2Processor
 
 # Import DiffSynth components
-try:
-    from diffsynth import ModelManager, WanVideoPipeline
-except ImportError:
-    print("Warning: DiffSynth not available. Installing...")
-    import subprocess
-    subprocess.run(["pip", "install", "git+https://github.com/modelscope/DiffSynth-Studio.git"], check=True)
-    from diffsynth import ModelManager, WanVideoPipeline
+def install_missing_packages():
+    """Install missing packages at runtime."""
+    missing_packages = []
+
+    try:
+        from diffsynth import ModelManager, WanVideoPipeline
+        return ModelManager, WanVideoPipeline
+    except ImportError:
+        missing_packages.append("diffsynth")
+
+    if missing_packages:
+        print(f"Installing missing packages: {missing_packages}")
+        import subprocess
+
+        # Install DiffSynth-Studio
+        try:
+            subprocess.run([
+                "pip", "install", "--no-cache-dir",
+                "git+https://github.com/modelscope/DiffSynth-Studio.git"
+            ], check=True, timeout=300)
+            print("✅ DiffSynth-Studio installed successfully")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            print(f"❌ Failed to install DiffSynth-Studio: {e}")
+            raise ImportError("Could not install DiffSynth-Studio")
+
+        # Try importing again
+        try:
+            from diffsynth import ModelManager, WanVideoPipeline
+            return ModelManager, WanVideoPipeline
+        except ImportError as e:
+            print(f"❌ Still cannot import DiffSynth after installation: {e}")
+            raise
+
+# Install and import DiffSynth
+ModelManager, WanVideoPipeline = install_missing_packages()
 
 from model import FantasyTalkingAudioConditionModel
 from utils import (

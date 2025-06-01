@@ -1,15 +1,9 @@
 runpod==1.7.7
-torch>=2.0.0
-torchvision
 transformers==4.46.2
-controlnet-aux==0.0.7
-imageio
-imageio[ffmpeg]
 safetensors
 einops
 sentencepiece
 protobuf
-modelscope
 ftfy
 librosa
 soundfile
@@ -18,4 +12,5 @@ opencv-python
 huggingface_hub
 accelerate
 diffusers
-git+https://github.com/modelscope/DiffSynth-Studio.git
+imageio
+modelscope

@@ -1,0 +1,43 @@
+# Minimal Dockerfile - use this if the main one fails
+FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-devel
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    wget \
+    curl \
+    ffmpeg \
+    libsndfile1 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Install only essential Python packages
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir runpod==1.7.7
+RUN pip install --no-cache-dir transformers==4.46.2
+RUN pip install --no-cache-dir huggingface_hub
+RUN pip install --no-cache-dir librosa soundfile
+RUN pip install --no-cache-dir Pillow opencv-python
+RUN pip install --no-cache-dir safetensors einops
+
+# Copy application files
+COPY rp_handler.py /app/
+COPY model.py /app/
+COPY utils.py /app/
+
+# Create models directory
+RUN mkdir -p /app/models
+
+# Set Python path
+ENV PYTHONPATH=/app:$PYTHONPATH
+
+# Start the container
+CMD ["python3", "-u", "rp_handler.py"]

@@ -26,10 +26,24 @@ WORKDIR /app
 # Copy requirements and install Python dependencies
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
 
-# Install huggingface-cli for model downloads
-RUN pip install --no-cache-dir "huggingface_hub[cli]"
+# Install core dependencies first
+RUN pip install --no-cache-dir runpod==1.7.7 transformers==4.46.2 safetensors einops
+
+# Install audio/video processing dependencies
+RUN pip install --no-cache-dir librosa soundfile imageio Pillow opencv-python
+
+# Install ML dependencies
+RUN pip install --no-cache-dir huggingface_hub accelerate diffusers
+
+# Install remaining dependencies
+RUN pip install --no-cache-dir sentencepiece protobuf ftfy modelscope
+
+# Install DiffSynth-Studio (may fail, so we'll handle it in the code)
+RUN pip install --no-cache-dir git+https://github.com/modelscope/DiffSynth-Studio.git || echo "DiffSynth-Studio installation failed, will install at runtime"
+
+# Install controlnet-aux (optional, may cause issues)
+RUN pip install --no-cache-dir controlnet-aux==0.0.7 || echo "controlnet-aux installation failed, continuing without it"
 
 # Copy application files
 COPY rp_handler.py /app/
