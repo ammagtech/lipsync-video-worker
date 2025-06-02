@@ -11,6 +11,18 @@ from pathlib import Path
 from PIL import Image
 from functools import wraps
 from transformers import Wav2Vec2Model, Wav2Vec2Processor
+
+# Global variables for model loading state
+models_loaded = False
+model_load_start_time = None
+
+def track_model_loading():
+    """Track model loading time and progress"""
+    global model_load_start_time
+    if model_load_start_time is None:
+        model_load_start_time = time.time()
+        return 0
+    return time.time() - model_load_start_time
 import subprocess
 
 # Import DiffSynth components
@@ -93,77 +105,145 @@ wav2vec = None
 
 def load_models():
     """Load all required models for FantasyTalking."""
-    global pipe, fantasytalking, wav2vec_processor, wav2vec
+    global pipe, fantasytalking, wav2vec_processor, wav2vec, models_loaded
+    
+    if models_loaded:
+        print("Models already loaded, skipping initialization")
+        return
 
-    print("Loading models...")
-    print("⚠️ Note: High CPU usage is normal during model loading (2-3 minutes)")
+    track_model_loading()  # Start tracking loading time
+    print(f"Loading models at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("⚠️ Note: High CPU usage is normal during model loading")
 
-    # Monitor CPU usage
+    # Monitor system resources
     try:
         import psutil
+        process = psutil.Process()
+        # Set process priority to reduce system impact
+        process.nice(10)  # Lower priority
+        # Limit memory usage
+        import resource
+        resource.setrlimit(resource.RLIMIT_AS, (int(30e9), -1))  # 30GB memory limit
+        # Monitor current usage
         cpu_percent = psutil.cpu_percent(interval=1)
         memory_info = psutil.virtual_memory()
-        print(f"📊 Current CPU: {cpu_percent}%, Memory: {memory_info.percent}%")
-    except:
-        pass
+        print(f"📊 System Status:\n  CPU: {cpu_percent}%\n  Memory: {memory_info.percent}%\n  Available Memory: {memory_info.available / 1e9:.1f}GB")
+    except Exception as e:
+        print(f"⚠️ Could not configure resource limits: {e}")
 
-    # Download models if needed
-    download_models_if_needed()
+    try:
+        # Download models if needed with progress tracking
+        download_models_if_needed()
+    except Exception as e:
+        print(f"❌ Failed to download models: {e}")
+        raise RuntimeError(f"Model download failed: {e}")
 
     # Model paths
     wan_model_dir = "./models/Wan2.1-I2V-14B-720P"
     wav2vec_model_dir = "./models/wav2vec2-base-960h"
-    fantasytalking_model_path = "./models/fantasytalking_model.ckpt"
+    fantasytalking_model_path = "./models/fantasytalking_model.ckpt"    # Configure PyTorch for efficient loading
+    print("Configuring PyTorch settings...")
+    torch.set_num_threads(min(4, torch.get_num_threads()))  # More conservative thread limit
+    torch.backends.cudnn.benchmark = True  # Enable cudnn autotuner
+    
+    # Enable torch compile if available (PyTorch 2.0+)
+    compile_available = hasattr(torch, 'compile')
+    if compile_available:
+        print("✅ PyTorch compilation available")
 
-    # Load Wan I2V models
-    print("Loading Wan I2V models... (This will use high CPU for 2-3 minutes)")
-
-    # Set CPU optimization for model loading
-    torch.set_num_threads(min(8, torch.get_num_threads()))  # Limit CPU threads
-
-    model_manager = ModelManager(device="cpu")
-    model_manager.load_models(
-        [
+    try:
+        # Load models with careful memory management
+        print("Loading Wan I2V models...")
+        torch.cuda.empty_cache()  # Clear any existing CUDA memory
+        
+        # Load models in chunks to manage memory better
+        model_files = [
+            f"{wan_model_dir}/diffusion_pytorch_model-{i:05d}-of-00007.safetensors"
+            for i in range(1, 8)
+        ]
+        
+        model_manager = ModelManager(device="cpu")
+        
+        # Load diffusion models in chunks
+        for i, model_file in enumerate(model_files, 1):
+            print(f"Loading diffusion model part {i}/7...")
+            if not os.path.exists(model_file):
+                raise FileNotFoundError(f"Model file not found: {model_file}")
+        
+        # Now load all models with progress tracking
+        load_start = time.time()
+        model_manager.load_models(
             [
-                f"{wan_model_dir}/diffusion_pytorch_model-00001-of-00007.safetensors",
-                f"{wan_model_dir}/diffusion_pytorch_model-00002-of-00007.safetensors",
-                f"{wan_model_dir}/diffusion_pytorch_model-00003-of-00007.safetensors",
-                f"{wan_model_dir}/diffusion_pytorch_model-00004-of-00007.safetensors",
-                f"{wan_model_dir}/diffusion_pytorch_model-00005-of-00007.safetensors",
-                f"{wan_model_dir}/diffusion_pytorch_model-00006-of-00007.safetensors",
-                f"{wan_model_dir}/diffusion_pytorch_model-00007-of-00007.safetensors",
+                model_files,
+                f"{wan_model_dir}/models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth",
+                f"{wan_model_dir}/models_t5_umt5-xxl-enc-bf16.pth",
+                f"{wan_model_dir}/Wan2.1_VAE.pth",
             ],
-            f"{wan_model_dir}/models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth",
-            f"{wan_model_dir}/models_t5_umt5-xxl-enc-bf16.pth",
-            f"{wan_model_dir}/Wan2.1_VAE.pth",
-        ],
-        torch_dtype=torch.bfloat16,
-    )
+            torch_dtype=torch.bfloat16,
+        )
+        load_time = time.time() - load_start
+        print(f"✅ Wan I2V models loaded in {load_time:.1f}s")
 
-    print("✅ Wan I2V models loaded, CPU usage should decrease now")
+    try:
+        print("Creating video pipeline...")
+        pipe = WanVideoPipeline.from_model_manager(
+            model_manager, 
+            torch_dtype=torch.bfloat16, 
+            device="cuda"
+        )
+        
+        # Configure pipeline for maximum efficiency
+        pipe.enable_vram_management(num_persistent_param_in_dit=0)  # Minimal VRAM usage
+        if compile_available:
+            print("Compiling pipeline models...")
+            pipe = torch.compile(pipe)  # Optimize with torch.compile
+        
+        print("Loading FantasyTalking model...")
+        fantasytalking = FantasyTalkingAudioConditionModel(pipe.dit, 768, 2048)
+        if compile_available:
+            fantasytalking = torch.compile(fantasytalking)
+        fantasytalking = fantasytalking.to("cuda")
 
-    pipe = WanVideoPipeline.from_model_manager(
-        model_manager, torch_dtype=torch.bfloat16, device="cuda"
-    )
+        # Load weights with error handling
+        if os.path.exists(fantasytalking_model_path):
+            weights_loaded = fantasytalking.load_audio_processor(fantasytalking_model_path, pipe.dit)
+            if not weights_loaded:
+                print("⚠️ FantasyTalking will use random weights")
+        else:
+            print(f"⚠️ FantasyTalking weights not found at {fantasytalking_model_path}")
 
-    # Load FantasyTalking weights
-    print("Loading FantasyTalking model...")
-    fantasytalking = FantasyTalkingAudioConditionModel(pipe.dit, 768, 2048).to("cuda")
+        print("Loading Wav2Vec models...")
+        # Load wav2vec with optimizations
+        wav2vec_processor = Wav2Vec2Processor.from_pretrained(
+            wav2vec_model_dir,
+            local_files_only=True  # Prevent any download attempts
+        )
+        wav2vec = Wav2Vec2Model.from_pretrained(
+            wav2vec_model_dir,
+            local_files_only=True,
+            torch_dtype=torch.bfloat16  # Use bfloat16 for consistency
+        )
+        if compile_available:
+            wav2vec = torch.compile(wav2vec)
+        wav2vec = wav2vec.to("cuda")
 
-    # Try to load the weights, but continue even if it fails
-    weights_loaded = fantasytalking.load_audio_processor(fantasytalking_model_path, pipe.dit)
-    if not weights_loaded:
-        print("⚠️ FantasyTalking will use random weights - results may be suboptimal")
-
-    # Enable VRAM management for efficiency
-    pipe.enable_vram_management(num_persistent_param_in_dit=0)  # Minimal VRAM usage
-
-    # Load wav2vec models
-    print("Loading Wav2Vec models...")
-    wav2vec_processor = Wav2Vec2Processor.from_pretrained(wav2vec_model_dir)
-    wav2vec = Wav2Vec2Model.from_pretrained(wav2vec_model_dir).to("cuda")
-
-    print("All models loaded successfully!")
+        # Mark models as loaded and record total time
+        models_loaded = True
+        total_load_time = track_model_loading()
+        print(f"✅ All models loaded successfully in {total_load_time:.1f} seconds")
+        
+        # Report memory status
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()  # Final cleanup
+            allocated = torch.cuda.memory_allocated() / 1e9
+            reserved = torch.cuda.memory_reserved() / 1e9
+            print(f"CUDA Memory Status:\n  Allocated: {allocated:.1f}GB\n  Reserved: {reserved:.1f}GB")
+            
+    except Exception as e:
+        print(f"❌ Error during model loading: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise RuntimeError(f"Failed to load models: {str(e)}")
 
 @with_timeout(timeout=600)  # 10 minute default timeout
 def handler(event):
