@@ -1,7 +1,7 @@
 {
     "input": {
-        "prompt": "Hey, I am a sweet AI voice modal",
-        "languageId": "h",
-        "voiceType": "hf_alpha"
+        "image": "",
+        "audio": "",
+        "bbox_shift": 0
     }
 }
