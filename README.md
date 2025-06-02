@@ -1,29 +1,34 @@
-# MuseTalk RunPod Worker
+# MuseTalk Lip-Sync Worker for RunPod
 
-This is a serverless worker implementation for the [MuseTalk](https://huggingface.co/TMElyralab/MuseTalk) model on RunPod. The worker processes image and audio inputs to create lip-synced videos where the subject's mouth movements match the provided audio.
+This repository contains a RunPod worker for lip-syncing videos using the MuseTalk model from TMElyralab.
 
 ## Features
 
-- Lip-syncing using the MuseTalk model from TMElyralab
+- Lip-syncing using the actual MuseTalk model
 - GPU acceleration for faster processing
-- Automatic model loading and initialization
-- Support for adjustable mouth openness via bbox_shift parameter
+- Face detection and landmark tracking
+- Audio-driven mouth movement synthesis
+- Support for adjustable face position via bbox_shift parameter
 - Base64 encoded video output for easy integration
 - Support for URL, base64, or local file paths for inputs
 
 ## Input Format
 
-The worker accepts the following input parameters:
+The worker accepts the following input format:
 
 ```json
 {
-    "input": {
-        "image": "path/to/image.jpg",      // Path, URL, or base64 of input image
-        "audio": "path/to/audio.wav",      // Path, URL, or base64 of audio file
-        "bbox_shift": 0                     // Optional: Adjust mouth openness (-9 to 9)
-    }
+  "input": {
+    "image": "[URL, base64, or local path]",
+    "audio": "[URL, base64, or local path]",
+    "bbox_shift": 0
+  }
 }
 ```
+
+- `image`: Can be a URL, base64 encoded string, or local file path. Must contain a clearly visible face.
+- `audio`: Can be a URL, base64 encoded string, or local file path. Audio will drive the lip movements.
+- `bbox_shift`: Optional parameter for adjusting the face bounding box position (-9 to 9). Useful if face detection is slightly off.
 
 If `image` and `audio` are not provided, the worker will generate test files for demonstration.
 
