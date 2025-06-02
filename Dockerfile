@@ -8,6 +8,11 @@ RUN apt-get update --fix-missing && \
     git \
     wget \
     ffmpeg \
+    libavcodec-extra \
+    libavformat-dev \
+    libavutil-dev \
+    libswscale-dev \
+    libx264-dev \
     libsm6 \
     libxext6 \
     python3-opencv \

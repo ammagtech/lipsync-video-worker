@@ -681,76 +681,76 @@ class MuseTalkModel:
             shutil.rmtree(temp_dir)
     
     def _create_video_with_audio(self, frame_paths, audio_path, output_path, fps):
-    try:
-        print(f"Creating video from {len(frame_paths)} frames at {fps} fps")
-        
-        # Create a more reliable command that combines everything in one step
-        # This avoids issues with two-step processing
-        frame_pattern = os.path.join(os.path.dirname(frame_paths[0]), "frame_%04d.png")
-        
-        # Verify audio file exists and has content
-        if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
-            print("Audio file is missing or empty, creating a fallback audio")
-            fallback_audio = os.path.join(os.path.dirname(output_path), "fallback_audio.wav")
-            os.system(f"ffmpeg -y -f lavfi -i 'sine=frequency=1000:duration=5' -q:a 9 -acodec pcm_s16le {fallback_audio}")
-            audio_path = fallback_audio
-        
-        # Try to get available video codecs
-        print("Checking available FFmpeg codecs...")
-        os.system("ffmpeg -codecs | grep 'encoders'")
-        
-        # Create video with audio in a single command using MPEG4 codec instead of libx264
-        # MPEG4 is more commonly available in basic FFmpeg installations
-        cmd = f"ffmpeg -y -framerate {fps} -i '{frame_pattern}' -i '{audio_path}' \
-              -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
-              -c:a aac -b:a 128k -shortest '{output_path}' -loglevel info"
-        
-        print(f"Running ffmpeg command: {cmd}")
-        result = os.system(cmd)
-        
-        if result != 0:
-            print(f"First attempt failed with exit code {result}, trying alternative method")
-            # Try an alternative approach with even more basic settings
-            alt_cmd = f"ffmpeg -y -framerate {fps} -i '{frame_pattern}' -i '{audio_path}' \
-                      -c:v mjpeg -q:v 3 -c:a copy '{output_path}'"
-            print(f"Running alternative command: {alt_cmd}")
-            result = os.system(alt_cmd)
+        try:
+            print(f"Creating video from {len(frame_paths)} frames at {fps} fps")
             
+            # Create a more reliable command that combines everything in one step
+            # This avoids issues with two-step processing
+            frame_pattern = os.path.join(os.path.dirname(frame_paths[0]), "frame_%04d.png")
+            
+            # Verify audio file exists and has content
+            if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+                print("Audio file is missing or empty, creating a fallback audio")
+                fallback_audio = os.path.join(os.path.dirname(output_path), "fallback_audio.wav")
+                os.system(f"ffmpeg -y -f lavfi -i 'sine=frequency=1000:duration=5' -q:a 9 -acodec pcm_s16le {fallback_audio}")
+                audio_path = fallback_audio
+            
+            # Try to get available video codecs
+            print("Checking available FFmpeg codecs...")
+            os.system("ffmpeg -codecs | grep 'encoders'")
+            
+            # Create video with audio in a single command using MPEG4 codec instead of libx264
+            # MPEG4 is more commonly available in basic FFmpeg installations
+            cmd = f"ffmpeg -y -framerate {fps} -i '{frame_pattern}' -i '{audio_path}' \
+                  -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
+                  -c:a aac -b:a 128k -shortest '{output_path}' -loglevel info"
+            
+            print(f"Running ffmpeg command: {cmd}")
+            result = os.system(cmd)
+        
             if result != 0:
-                # Try a third approach with very basic codec
-                print(f"Second attempt failed with exit code {result}, trying third method")
-                third_cmd = f"ffmpeg -y -framerate {fps} -i '{frame_pattern}' -i '{audio_path}' \
-                           -c:v rawvideo -pix_fmt yuv420p -c:a copy '{output_path}'"
-                print(f"Running third command: {third_cmd}")
-                result = os.system(third_cmd)
+                print(f"First attempt failed with exit code {result}, trying alternative method")
+                # Try an alternative approach with even more basic settings
+                alt_cmd = f"ffmpeg -y -framerate {fps} -i '{frame_pattern}' -i '{audio_path}' \
+                          -c:v mjpeg -q:v 3 -c:a copy '{output_path}'"
+                print(f"Running alternative command: {alt_cmd}")
+                result = os.system(alt_cmd)
                 
                 if result != 0:
-                    raise Exception(f"All ffmpeg encoding attempts failed, exit codes: {result}")
-        
-        # Verify the output file exists and has content
-        if not os.path.exists(output_path) or os.path.getsize(output_path) < 1000:
-            raise Exception(f"Output video file is missing or too small: {output_path}")
+                    # Try a third approach with very basic codec
+                    print(f"Second attempt failed with exit code {result}, trying third method")
+                    third_cmd = f"ffmpeg -y -framerate {fps} -i '{frame_pattern}' -i '{audio_path}' \
+                               -c:v rawvideo -pix_fmt yuv420p -c:a copy '{output_path}'"
+                    print(f"Running third command: {third_cmd}")
+                    result = os.system(third_cmd)
+                    
+                    if result != 0:
+                        raise Exception(f"All ffmpeg encoding attempts failed, exit codes: {result}")
             
-        print(f"Successfully created video with audio: {os.path.getsize(output_path)} bytes")
-            
-    except Exception as e:
-        print(f"Error in _create_video_with_audio: {str(e)}")
-        # If we failed to create a proper video, try a very simple approach
-        try:
-            print("Attempting emergency video creation")
-            # Try to create a video with just the frames, no audio, using a basic codec
-            emergency_cmd = f"ffmpeg -y -framerate {fps} -i '{frame_pattern}' -c:v mjpeg '{output_path}'"
-            os.system(emergency_cmd)
-            
+            # Verify the output file exists and has content
             if not os.path.exists(output_path) or os.path.getsize(output_path) < 1000:
-                # If that failed too, just use the first frame
-                print("Emergency video creation failed, using first frame")
-                shutil.copy(frame_paths[0], output_path)
-        except Exception as e2:
-            print(f"All video creation attempts failed: {str(e2)}")
-            # Create an extremely simple output - just a text file converted to mp4
-            with open(output_path, 'wb') as f:
-                f.write(b'\x00' * 1024)  # Write some dummy data
+                raise Exception(f"Output video file is missing or too small: {output_path}")
+                
+            print(f"Successfully created video with audio: {os.path.getsize(output_path)} bytes")
+                
+        except Exception as e:
+            print(f"Error in _create_video_with_audio: {str(e)}")
+            # If we failed to create a proper video, try a very simple approach
+            try:
+                print("Attempting emergency video creation")
+                # Try to create a video with just the frames, no audio, using a basic codec
+                emergency_cmd = f"ffmpeg -y -framerate {fps} -i '{frame_pattern}' -c:v mjpeg '{output_path}'"
+                os.system(emergency_cmd)
+                
+                if not os.path.exists(output_path) or os.path.getsize(output_path) < 1000:
+                    # If that failed too, just use the first frame
+                    print("Emergency video creation failed, using first frame")
+                    shutil.copy(frame_paths[0], output_path)
+            except Exception as e2:
+                print(f"All video creation attempts failed: {str(e2)}")
+                # Create an extremely simple output - just a text file converted to mp4
+                with open(output_path, 'wb') as f:
+                    f.write(b'\x00' * 1024)  # Write some dummy data
 
 
 def handler(event):
