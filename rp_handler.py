@@ -4,12 +4,38 @@ import tempfile
 import base64
 import torch
 import librosa
+import time
+import signal
 from datetime import datetime
 from pathlib import Path
 from PIL import Image
+from functools import wraps
 from transformers import Wav2Vec2Model, Wav2Vec2Processor
 
 # Import DiffSynth components
+def timeout_handler(signum, frame):
+    raise TimeoutError("Processing exceeded time limit")
+
+def with_timeout(timeout=600):
+    """Decorator to add timeout to a function"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Set the signal handler
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(timeout)  # Set alarm for timeout seconds
+            
+            try:
+                result = func(*args, **kwargs)
+                signal.alarm(0)  # Disable the alarm
+                return result
+            except TimeoutError as e:
+                signal.alarm(0)  # Disable the alarm
+                raise TimeoutError(f"Operation timed out after {timeout} seconds")
+            
+        return wrapper
+    return decorator
+
 def install_missing_packages():
     """Install missing packages at runtime."""
     missing_packages = []
@@ -138,6 +164,7 @@ def load_models():
 
     print("All models loaded successfully!")
 
+@with_timeout(timeout=600)  # 10 minute default timeout
 def handler(event):
     """
     RunPod handler function for FantasyTalking lip-sync generation.
@@ -236,16 +263,30 @@ def generate_lipsynced_video(
     image_path: str,
     audio_path: str,
     prompt: str,
-    image_size: int = 512,
-    max_num_frames: int = 81,
+    image_size: int = 384,  # Reduced default for faster processing
+    max_num_frames: int = 49,  # Reduced default for faster processing
     fps: int = 23,
     prompt_cfg_scale: float = 5.0,
     audio_cfg_scale: float = 5.0,
     seed: int = 1111,
-    output_dir: str = "./output"
+    output_dir: str = "./output",
+    timeout: int = 600  # Default 10 minute timeout
 ) -> dict:
     """
     Generate lip-synced video using FantasyTalking.
+
+    Args:
+        image_path: Path to the input image
+        audio_path: Path to the input audio
+        prompt: Text prompt describing the video
+        image_size: Size of the output video (default: 384)
+        max_num_frames: Maximum number of frames to generate (default: 49)
+        fps: Frames per second (default: 23)
+        prompt_cfg_scale: Prompt guidance scale (default: 5.0)
+        audio_cfg_scale: Audio guidance scale (default: 5.0)
+        seed: Random seed (default: 1111)  
+        output_dir: Output directory (default: "./output")
+        timeout: Maximum execution time in seconds (default: 600)
 
     Returns:
         Dictionary with status and video_base64 or error message
@@ -253,29 +294,39 @@ def generate_lipsynced_video(
     global pipe, fantasytalking, wav2vec_processor, wav2vec
 
     try:
-        print(f"Processing image: {image_path}")
-        print(f"Processing audio: {audio_path}")
-        print(f"Prompt: {prompt}")
+        start_time = time.time()
+        print(f"Starting processing at {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Processing settings: {image_size}x{image_size}, max {max_num_frames} frames, {fps} fps")
+        print(f"Input files: \n  Image: {image_path}\n  Audio: {audio_path}\n  Prompt: {prompt}")
+
+        def log_progress(step: str, progress: float = None):
+            elapsed = time.time() - start_time
+            progress_str = f" ({progress:.0%})" if progress is not None else ""
+            print(f"[{elapsed:.1f}s] {step}{progress_str}")
+            if elapsed > timeout:
+                raise TimeoutError(f"Operation timed out after {timeout} seconds")
+
+        log_progress("Starting video generation...")
 
         # Calculate video parameters based on audio duration
         duration = librosa.get_duration(filename=audio_path)
         num_frames = min(int(fps * duration // 4) * 4 + 5, max_num_frames)
-        print(f"Audio duration: {duration:.2f}s, generating {num_frames} frames")
+        log_progress(f"Audio duration: {duration:.2f}s, generating {num_frames} frames", 0.1)
 
         # Extract audio features
-        print("Extracting audio features...")
+        log_progress("Extracting audio features...", 0.2)
         audio_wav2vec_fea = get_audio_features(
             wav2vec, wav2vec_processor, audio_path, fps, num_frames
         )
 
         # Resize and prepare image
-        print("Processing image...")
+        log_progress("Processing image...", 0.3)
         image = resize_image_by_longest_edge(image_path, image_size)
         width, height = image.size
-        print(f"Image resized to: {width}x{height}")
+        log_progress(f"Image resized to: {width}x{height}", 0.35)
 
         # Process audio features for conditioning
-        print("Processing audio conditioning...")
+        log_progress("Processing audio conditioning...", 0.4)
         audio_proj_fea = fantasytalking.get_proj_fea(audio_wav2vec_fea)
         pos_idx_ranges = fantasytalking.split_audio_sequence(
             audio_proj_fea.size(1), num_frames=num_frames
@@ -285,7 +336,7 @@ def generate_lipsynced_video(
         )
 
         # Generate video
-        print("Generating lip-synced video...")
+        log_progress("Starting video generation (main processing step)...", 0.5)
         video_frames = pipe(
             prompt=prompt,
             negative_prompt="人物静止不动，静止，色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
@@ -306,6 +357,7 @@ def generate_lipsynced_video(
         # Save temporary video without audio
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         temp_video_path = os.path.join(output_dir, f"temp_video_{current_time}.mp4")
+        log_progress("Saving intermediate video frames...", 0.8)
         save_video(video_frames, temp_video_path, fps=fps, quality=5)
 
         # Combine video with original audio using ffmpeg
@@ -321,16 +373,20 @@ def generate_lipsynced_video(
             final_video_path
         ]
 
-        print("Combining video with audio...")
+        log_progress("Combining video with audio...", 0.9)
         subprocess.run(ffmpeg_command, check=True, capture_output=True)
 
         # Encode final video to base64
-        print("Encoding video to base64...")
+        log_progress("Encoding final video to base64...", 0.95)
         video_base64 = encode_video_to_base64(final_video_path)
 
         # Clean up temporary files
         os.remove(temp_video_path)
         os.remove(final_video_path)
+
+        end_time = time.time()
+        total_time = end_time - start_time
+        log_progress(f"Processing completed in {total_time:.1f} seconds", 1.0)
 
         return {
             "status": "success",
@@ -339,16 +395,27 @@ def generate_lipsynced_video(
             "fps": fps,
             "duration": duration,
             "resolution": f"{width}x{height}",
-            "prompt": prompt
+            "prompt": prompt,
+            "processing_time": round(total_time, 2)
         }
 
+    except TimeoutError as e:
+        print(f"Timeout error in generate_lipsynced_video: {str(e)}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "error_type": "timeout",
+            "processing_time": round(time.time() - start_time, 2)
+        }
     except Exception as e:
         print(f"Error in generate_lipsynced_video: {str(e)}")
         import traceback
         traceback.print_exc()
         return {
             "status": "error",
-            "message": f"Video generation failed: {str(e)}"
+            "message": f"Video generation failed: {str(e)}",
+            "error_type": "runtime_error",
+            "processing_time": round(time.time() - start_time, 2)
         }
 
 if __name__ == '__main__':
