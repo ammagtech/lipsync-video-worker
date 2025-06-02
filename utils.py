@@ -9,6 +9,7 @@ from typing import Union, List
 from PIL import Image
 import librosa
 from typing import Tuple, Optional
+import io
 
 
 def get_audio_features(
