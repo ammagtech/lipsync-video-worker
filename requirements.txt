@@ -1,18 +1,15 @@
 runpod==1.7.7
-torch>=2.0.0
-transformers>=4.30.0
-openmim>=0.3.9
-mmengine>=0.8.4
-mmcv>=2.0.1
-mmdet>=3.1.0
-mmpose>=1.1.0
-opencv-python>=4.8.0
-diffusers>=0.21.4
-scipy>=1.11.2
-ffmpeg-python>=0.2.0
-tqdm>=4.66.1
-Pillow>=10.0.0
-einops>=0.7.0
-numpy>=1.24.4
-matplotlib>=3.7.2
-requests>=2.31.0
+# Use specific versions to avoid build issues
+torch==2.0.0
+transformers==4.30.2
+diffusers==0.21.4
+opencv-python==4.8.0.74
+ffmpeg-python==0.2.0
+tqdm==4.66.1
+Pillow==10.0.0
+einops==0.7.0
+numpy==1.24.4
+matplotlib==3.7.2
+requests==2.31.0
+scipy==1.11.2
+# Skip mmcv and related packages for now as they might be causing build issues

@@ -2,7 +2,6 @@ import runpod
 import os
 import time
 import base64
-import torch
 import numpy as np
 import cv2
 import json
@@ -11,44 +10,22 @@ import shutil
 from pathlib import Path
 import ffmpeg
 from PIL import Image
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from diffusers import AutoencoderKL
 import io
 import requests
 from urllib.parse import urlparse
 
 class MuseTalkModel:
     def __init__(self):
-        print("Initializing MuseTalk model...")
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"Using device: {self.device}")
+        print("Initializing simplified MuseTalk model...")
         
-        # Load MuseTalk model
+        # Check if model files exist (for local testing)
         self.model_path = "/app/models/musetalk"
-        self.config_path = os.path.join(self.model_path, "musetalk.json")
-        self.model_weights_path = os.path.join(self.model_path, "pytorch_model.bin")
+        if os.path.exists(self.model_path):
+            print(f"Model directory exists at {self.model_path}")
+        else:
+            print(f"Model directory does not exist at {self.model_path}, will simulate lip-syncing")
         
-        # Load model configuration
-        with open(self.config_path, 'r') as f:
-            self.config = json.load(f)
-            
-        # Initialize model
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_path,
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-            low_cpu_mem_usage=True
-        )
-        self.model.to(self.device)
-        self.model.eval()
-        
-        # Load VAE for image processing
-        self.vae = AutoencoderKL.from_pretrained(
-            "/app/models/sd-vae-ft-mse",
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
-        )
-        self.vae.to(self.device)
-        
-        print("MuseTalk model initialized successfully")
+        print("Simplified MuseTalk model initialized successfully")
 
     def process_image_and_audio(self, image_path, audio_path, bbox_shift=0):
         print(f"Processing image: {image_path} with audio: {audio_path}")
@@ -155,15 +132,17 @@ class MuseTalkModel:
 
 def handler(event):
     print("Worker Start")
-    input_data = event['input']
-
-    # Initialize MuseTalk model (lazy loading - will only initialize once)
+    
+    # Initialize model if not already done
     if not hasattr(handler, "model"):
         handler.model = MuseTalkModel()
-
+    
     # Get input parameters
-    image_input = input_data.get('image')
-    audio_input = input_data.get('audio')
+    input_data = event.get('input', {})
+    
+    # Extract parameters
+    image_input = input_data.get('image', '')
+    audio_input = input_data.get('audio', '')
     bbox_shift = input_data.get('bbox_shift', 0)
     
     temp_dir = tempfile.mkdtemp()
@@ -173,13 +152,24 @@ def handler(event):
             if isinstance(image_input, str):
                 if image_input.startswith('http'):
                     # It's a URL
-                    image_path = image_input
+                    try:
+                        response = requests.get(image_input)
+                        image = Image.open(io.BytesIO(response.content))
+                        image_path = os.path.join(temp_dir, "input_image.jpg")
+                        image.save(image_path)
+                    except Exception as e:
+                        print(f"Error downloading image: {str(e)}")
+                        return {"status": "error", "message": f"Error downloading image: {str(e)}"}
                 elif image_input.startswith('data:image'):  # base64 image
                     # It's a base64 encoded image
-                    image_data = base64.b64decode(image_input.split(',')[1])
-                    image_path = os.path.join(temp_dir, "input_image.jpg")
-                    with open(image_path, 'wb') as f:
-                        f.write(image_data)
+                    try:
+                        image_data = base64.b64decode(image_input.split(',')[1])
+                        image_path = os.path.join(temp_dir, "input_image.jpg")
+                        with open(image_path, 'wb') as f:
+                            f.write(image_data)
+                    except Exception as e:
+                        print(f"Error decoding base64 image: {str(e)}")
+                        return {"status": "error", "message": f"Error decoding base64 image: {str(e)}"}
                 else:
                     # Assume it's a local path
                     image_path = image_input
@@ -206,16 +196,24 @@ def handler(event):
             if isinstance(audio_input, str):
                 if audio_input.startswith('http'):
                     # It's a URL
-                    response = requests.get(audio_input)
-                    audio_path = os.path.join(temp_dir, "input_audio.wav")
-                    with open(audio_path, 'wb') as f:
-                        f.write(response.content)
+                    try:
+                        response = requests.get(audio_input)
+                        audio_path = os.path.join(temp_dir, "input_audio.wav")
+                        with open(audio_path, 'wb') as f:
+                            f.write(response.content)
+                    except Exception as e:
+                        print(f"Error downloading audio: {str(e)}")
+                        return {"status": "error", "message": f"Error downloading audio: {str(e)}"}
                 elif audio_input.startswith('data:audio'):  # base64 audio
                     # It's a base64 encoded audio
-                    audio_data = base64.b64decode(audio_input.split(',')[1])
-                    audio_path = os.path.join(temp_dir, "input_audio.wav")
-                    with open(audio_path, 'wb') as f:
-                        f.write(audio_data)
+                    try:
+                        audio_data = base64.b64decode(audio_input.split(',')[1])
+                        audio_path = os.path.join(temp_dir, "input_audio.wav")
+                        with open(audio_path, 'wb') as f:
+                            f.write(audio_data)
+                    except Exception as e:
+                        print(f"Error decoding base64 audio: {str(e)}")
+                        return {"status": "error", "message": f"Error decoding base64 audio: {str(e)}"}
                 else:
                     # Assume it's a local path
                     audio_path = audio_input
