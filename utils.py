@@ -1,14 +1,14 @@
 # Copyright Alibaba Inc. All Rights Reserved.
 
 import os
-import cv2
-import torch
-import librosa
-import numpy as np
-from PIL import Image
-from typing import Tuple, Optional
 import base64
-import io
+import cv2
+import numpy as np
+import torch
+from typing import Union, List
+from PIL import Image
+import librosa
+from typing import Tuple, Optional
 
 
 def get_audio_features(
@@ -95,16 +95,20 @@ def resize_image_by_longest_edge(image_path: str, target_size: int = 512) -> Ima
     return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
 
-def save_video(frames: torch.Tensor, output_path: str, fps: int = 23, quality: int = 5):
+def save_video(frames: Union[torch.Tensor, np.ndarray, List], output_path: str, fps: int = 23, quality: int = 5):
     """
     Save video frames to file.
     
     Args:
-        frames: Video frames tensor [num_frames, height, width, channels]
+        frames: Video frames as tensor [num_frames, height, width, channels], numpy array, or list of frames
         output_path: Output video file path
         fps: Frames per second
         quality: Video quality (1-10, higher is better)
     """
+    # Convert list to numpy if needed
+    if isinstance(frames, list):
+        frames = np.array(frames)
+    
     # Convert tensor to numpy if needed
     if isinstance(frames, torch.Tensor):
         frames = frames.cpu().numpy()
