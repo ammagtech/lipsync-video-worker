@@ -11,6 +11,7 @@ from pathlib import Path
 from PIL import Image
 from functools import wraps
 from transformers import Wav2Vec2Model, Wav2Vec2Processor
+import subprocess
 
 # Import DiffSynth components
 def timeout_handler(signum, frame):
@@ -259,6 +260,24 @@ def handler(event):
             "message": f"Processing failed: {str(e)}"
         }
 
+def validate_media_file(filepath: str, media_type: str = 'video') -> tuple[bool, str]:
+    """Validate a video or audio file using ffprobe."""
+    try:
+        probe_cmd = [
+            'ffprobe',
+            '-v', 'error',
+            '-select_streams', 'v' if media_type == 'video' else 'a',
+            '-show_entries', 'stream=codec_name,width,height,duration' if media_type == 'video' else 'stream=codec_name,duration',
+            '-of', 'json',
+            filepath
+        ]
+        result = subprocess.run(probe_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return False, f"FFprobe failed: {result.stderr}"
+        return True, "Valid"
+    except Exception as e:
+        return False, str(e)
+
 def generate_lipsynced_video(
     image_path: str,
     audio_path: str,
@@ -360,6 +379,16 @@ def generate_lipsynced_video(
         log_progress("Saving intermediate video frames...", 0.8)
         save_video(video_frames, temp_video_path, fps=fps, quality=5)
 
+        # Validate the generated video and input audio
+        log_progress("Validating generated video...", 0.85)
+        video_valid, video_error = validate_media_file(temp_video_path, 'video')
+        if not video_valid:
+            raise RuntimeError(f"Generated video is invalid: {video_error}")
+        
+        audio_valid, audio_error = validate_media_file(audio_path, 'audio')
+        if not audio_valid:
+            raise RuntimeError(f"Input audio is invalid: {audio_error}")
+
         # Combine video with original audio using ffmpeg
         final_video_path = os.path.join(output_dir, f"final_video_{current_time}.mp4")
         import subprocess
@@ -368,13 +397,36 @@ def generate_lipsynced_video(
             "-i", temp_video_path,
             "-i", audio_path,
             "-c:v", "libx264",
+            "-preset", "medium",  # Add preset for better compatibility
             "-c:a", "aac",
+            "-strict", "experimental",  # Add for better codec compatibility
             "-shortest",
+            "-loglevel", "error",  # Only show errors
             final_video_path
         ]
 
         log_progress("Combining video with audio...", 0.9)
-        subprocess.run(ffmpeg_command, check=True, capture_output=True)
+        try:
+            result = subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            print(f"FFmpeg error output:\n{e.stderr}")
+            # Try fallback method with different codec settings
+            fallback_command = [
+                "ffmpeg", "-y",
+                "-i", temp_video_path,
+                "-i", audio_path,
+                "-c:v", "libx264",
+                "-preset", "ultrafast",  # Use fastest preset
+                "-c:a", "aac",
+                "-ar", "44100",  # Specify audio sample rate
+                "-ac", "2",  # Force stereo audio
+                "-strict", "experimental",
+                "-shortest",
+                "-loglevel", "error",
+                final_video_path
+            ]
+            log_progress("First attempt failed, trying fallback encoding...", 0.91)
+            subprocess.run(fallback_command, check=True, text=True)  # Let error propagate if fallback also fails
 
         # Encode final video to base64
         log_progress("Encoding final video to base64...", 0.95)
