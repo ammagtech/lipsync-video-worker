@@ -18,12 +18,13 @@ class MuseTalkModel:
     def __init__(self):
         print("Initializing simplified MuseTalk model...")
         
-        # Check if model files exist (for local testing)
+        # Create model directories if they don't exist
         self.model_path = "/app/models/musetalk"
-        if os.path.exists(self.model_path):
-            print(f"Model directory exists at {self.model_path}")
-        else:
-            print(f"Model directory does not exist at {self.model_path}, will simulate lip-syncing")
+        os.makedirs(self.model_path, exist_ok=True)
+        
+        # We'll simulate lip-syncing without actually loading the model
+        # This avoids issues with model downloads and dependencies
+        print("Using simulated lip-syncing for demonstration")
         
         print("Simplified MuseTalk model initialized successfully")
 

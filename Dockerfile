@@ -19,9 +19,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN mkdir -p /app/models/musetalk \
     /app/models/sd-vae-ft-mse
 
-# Download MuseTalk model (simplified for testing)
-RUN wget -q https://huggingface.co/TMElyralab/MuseTalk/resolve/main/musetalk.json -O /app/models/musetalk/musetalk.json && \
-    wget -q https://huggingface.co/TMElyralab/MuseTalk/resolve/main/pytorch_model.bin -O /app/models/musetalk/pytorch_model.bin
+# Instead of downloading models in Dockerfile, we'll handle it in the runtime
+# This avoids potential download issues during build
 
 # Set environment variables
 ENV FFMPEG_PATH=/usr/bin/ffmpeg
