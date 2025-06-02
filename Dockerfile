@@ -11,11 +11,23 @@ RUN apt-get update --fix-missing && \
     libsm6 \
     libxext6 \
     python3-opencv \
+    build-essential \
+    cmake \
+    libopenblas-dev \
+    liblapack-dev \
+    libx11-dev \
+    libgtk-3-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt /app/requirements.txt
+
+# Install dlib separately first with specific compiler flags
+RUN pip install --no-cache-dir numpy
+RUN pip install --no-cache-dir dlib==19.24.0
+
+# Install the rest of the requirements
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create model directories

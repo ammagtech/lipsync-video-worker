@@ -18,5 +18,6 @@ librosa==0.10.1
 scipy==1.11.3
 einops==0.6.1
 matplotlib==3.7.2
-dlib==19.24.2
+# dlib is installed separately in the Dockerfile
+# dlib==19.24.0
 tqdm==4.66.1
