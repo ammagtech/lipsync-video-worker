@@ -1,5 +1,7 @@
 {
     "input": {
-        "prompt": "test"
+        "prompt": "Hey, I am a sweet AI voice modal",
+        "languageId": "h",
+        "voiceType": "hf_alpha"
     }
 }
