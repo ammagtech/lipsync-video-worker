@@ -808,24 +808,86 @@ class MuseTalkModel:
                 pred_landmarks[:, 0] = pred_landmarks[:, 0] * (x2 - x1) + x1
                 pred_landmarks[:, 1] = pred_landmarks[:, 1] * (y2 - y1) + y1
                 
-                # Draw the face with new mouth landmarks
-                # First draw the original face
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                # Create a copy of the original frame for the final output
+                output_frame = frame.copy()
                 
-                # Draw original landmarks
-                for point in landmarks:
-                    cv2.circle(frame, (int(point[0]), int(point[1])), 2, (0, 0, 255), -1)
-                
-                # Replace mouth landmarks with predicted ones
+                # Get the mouth region from predicted landmarks
                 mouth_pred = pred_landmarks[48:68]
                 
-                # Draw predicted mouth
-                for point in mouth_pred:
-                    cv2.circle(frame, (int(point[0]), int(point[1])), 3, (255, 0, 0), -1)
-                
-                # Fill the mouth region
+                # Create a mask for the mouth region
+                mask = np.zeros_like(frame)
                 mouth_hull = cv2.convexHull(mouth_pred.astype(np.int32))
-                cv2.drawContours(frame, [mouth_hull], 0, (0, 0, 255), 2)
+                cv2.fillConvexPoly(mask, mouth_hull, (255, 255, 255))
+                
+                # Dilate the mask slightly to create a smooth transition
+                kernel = np.ones((3, 3), np.uint8)
+                mask = cv2.dilate(mask, kernel, iterations=2)
+                
+                # Convert mask to single channel for warping
+                mask_single = mask[:,:,0]
+                
+                # Apply the predicted mouth to the original face
+                # Create a mesh grid for the face
+                h, w = frame.shape[:2]
+                x, y = np.meshgrid(np.arange(w), np.arange(h))
+                
+                # Create a copy for the warped face
+                warped_face = frame.copy()
+                
+                # Warp the mouth region based on the difference between original and predicted landmarks
+                for i in range(48, 68):  # Mouth landmarks
+                    # Get the displacement between original and predicted landmarks
+                    dx = pred_landmarks[i, 0] - landmarks[i, 0]
+                    dy = pred_landmarks[i, 1] - landmarks[i, 1]
+                    
+                    # Calculate distance from this landmark to all pixels
+                    dist = np.sqrt((x - landmarks[i, 0])**2 + (y - landmarks[i, 1])**2)
+                    
+                    # Apply weighted displacement based on distance
+                    # Closer pixels move more, farther pixels move less
+                    weight = np.exp(-dist / 10.0)  # Adjust the divisor to control the falloff
+                    x_shift = dx * weight
+                    y_shift = dy * weight
+                    
+                    # Update the mesh grid
+                    x = x + x_shift
+                    y = y + y_shift
+                
+                # Ensure coordinates are within bounds
+                x = np.clip(x, 0, w-1).astype(np.float32)
+                y = np.clip(y, 0, h-1).astype(np.float32)
+                
+                # Apply the warping using remap
+                warped_face = cv2.remap(frame, x, y, cv2.INTER_LINEAR)
+                
+                # Blend the warped face with the original face using the mask
+                output_frame = cv2.bitwise_and(warped_face, mask) + cv2.bitwise_and(frame, cv2.bitwise_not(mask))
+                
+                # Replace the frame with the output frame
+                frame = output_frame
+                
+                # For debugging, draw a small visualization in the corner
+                debug_size = 100
+                debug_offset = 10
+                debug_img = np.zeros((debug_size, debug_size, 3), dtype=np.uint8)
+                
+                # Draw the mouth hull in the debug window
+                scaled_hull = []
+                for point in mouth_hull:
+                    x_scaled = int((point[0][0] - x1) / (x2 - x1) * debug_size)
+                    y_scaled = int((point[0][1] - y1) / (y2 - y1) * debug_size)
+                    scaled_hull.append([[x_scaled, y_scaled]])
+                
+                cv2.drawContours(debug_img, np.array(scaled_hull), 0, (0, 0, 255), 1)
+                
+                # Draw the predicted mouth landmarks in the debug window
+                for point in mouth_pred:
+                    x_scaled = int((point[0] - x1) / (x2 - x1) * debug_size)
+                    y_scaled = int((point[1] - y1) / (y2 - y1) * debug_size)
+                    cv2.circle(debug_img, (x_scaled, y_scaled), 2, (255, 0, 0), -1)
+                
+                # Add the debug window to the corner of the frame
+                frame[debug_offset:debug_offset+debug_size, debug_offset:debug_offset+debug_size] = debug_img
                 
                 # Add frame number
                 cv2.putText(frame, 
