@@ -1015,13 +1015,13 @@ def handler(event):
             file_size = os.path.getsize(output_path)
             print(f"Final output video file size: {file_size} bytes")
             
-            # Instead of returning base64, return the file path
-            # RunPod will automatically handle file outputs
+            # Use RunPod's file output mechanism
+            # This will upload the file to RunPod storage and return a downloadable URL
             return {
                 "status": "success",
-                "output_file": output_path,  # RunPod will handle this as a file output
                 "file_size_bytes": file_size,
-                "message": "MuseTalk processing completed successfully"
+                "message": "MuseTalk processing completed successfully",
+                "output": runpod.upload_file(output_path)  # This uploads the file and returns a URL
             }
             
         except Exception as e:
@@ -1043,8 +1043,8 @@ def handler(event):
                 
                 return {
                     "status": "error",
-                    "output_file": emergency_output,
-                    "message": error_message
+                    "message": error_message,
+                    "output": runpod.upload_file(emergency_output)  # Upload the emergency file
                 }
             except Exception as e2:
                 # If we can't even create an emergency file, just return the error
