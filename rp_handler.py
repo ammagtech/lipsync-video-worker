@@ -146,10 +146,10 @@ class MuseTalkModel:
             if not boxes or len(boxes) == 0:
                 return None
             
-            results = []
-            for box in boxes:
-                x1, y1, x2, y2 = box[:4]
-                w, h = x2 - x1, y2 - y1
+            # Only use the first box (most prominent face)
+            box = boxes[0]
+            x1, y1, x2, y2 = box[:4]
+            w, h = x2 - x1, y2 - y1
                 
                 # Generate 68 landmarks in the standard configuration
                 landmarks = np.zeros((68, 2))
@@ -259,11 +259,9 @@ class MuseTalkModel:
                 landmarks[67, 0] = x1 + w * 0.5  # Bottom middle
                 landmarks[67, 1] = y1 + h * 0.76
                 
-                results.append(landmarks)
+                # Return the landmarks directly
+                return landmarks
             
-            # Return the first face's landmarks (most prominent face)
-            if results:
-                return results[0]
             return None
         except Exception as e:
             print(f"Fallback face alignment failed: {str(e)}")
@@ -333,6 +331,11 @@ class MuseTalkModel:
             # Enable CUDA optimization
             torch.backends.cudnn.benchmark = True
             torch.backends.cudnn.enabled = True
+            # Set GPU as highest priority for operations
+            torch.set_float32_matmul_precision('high')
+            # Allocate a small amount of memory at initialization to ensure GPU is active
+            torch.cuda.empty_cache()
+            dummy = torch.ones(1).cuda()
         else:
             print("CUDA is not available. Using CPU.")
         print(f"Using device: {self.device}")
@@ -732,63 +735,105 @@ class MuseTalkModel:
             # Calculate how many audio samples per frame
             samples_per_frame = len(audio_data) / frame_count
             
-            print(f"Generating {frame_count} frames with MuseTalk model...")
+            # Generate frames with lip-synced video
+            frame_paths = []
             
-            # Process each frame
-            for i in range(frame_count):
-                # Create a copy of the image for this frame
-                frame = image_np.copy()
+            print(f"Generating {frame_count} frames with MuseTalk model...")
+            frame_paths = []
+            
+            # Process frames in batches to better utilize GPU
+            batch_size = 8  # Process 8 frames at a time
+            
+            # Prepare face tensor once (reused for all frames)
+            face_img = cv2.resize(image_np[y1:y2, x1:x2], (256, 256))
+            face_tensor = torch.FloatTensor(face_img).permute(2, 0, 1).unsqueeze(0) / 255.0
+            face_tensor = normalize(face_tensor, [0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+            face_tensor = face_tensor.to(self.device)
+            
+            # Ensure model is on GPU and in eval mode
+            self.model = self.model.to(self.device)
+            self.model.eval()
+            
+            # Process each batch of frames
+            for batch_start in range(0, frame_count, batch_size):
+                batch_end = min(batch_start + batch_size, frame_count)
+                current_batch_size = batch_end - batch_start
+                print(f"Processing frames {batch_start+1}-{batch_end}/{frame_count}")
                 
-                # Get audio segment for this frame
-                start_sample = int(i * samples_per_frame)
-                end_sample = int((i + 1) * samples_per_frame)
-                audio_segment = audio_data[start_sample:end_sample]
+                # Prepare batch of audio segments
+                batch_audio_segments = []
+                batch_frames = []
                 
-                # Prepare audio features for model
-                try:
+                for i in range(batch_start, batch_end):
+                    # Create a copy of the image for this frame
+                    frame = image_np.copy()
+                    batch_frames.append(frame)
+                    
+                    # Get audio segment for this frame
+                    start_sample = int(i * samples_per_frame)
+                    end_sample = int((i + 1) * samples_per_frame)
+                    audio_segment = audio_data[start_sample:end_sample]
+                    
                     # Pad if needed
                     if len(audio_segment) < 16000:
                         audio_segment = np.pad(audio_segment, (0, 16000 - len(audio_segment)))
                     
-                    # Convert audio to tensor
-                    audio_tensor = torch.FloatTensor(audio_segment).unsqueeze(0).to(self.device)
-                    
-                    # Prepare image for the model
-                    face_img = image_np[y1:y2, x1:x2]
-                    face_img = cv2.resize(face_img, (224, 224))
-                    face_tensor = torch.FloatTensor(face_img).permute(2, 0, 1).unsqueeze(0)
-                    face_tensor = face_tensor / 255.0  # Normalize to [0, 1]
-                    face_tensor = normalize(face_tensor, [0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
-                    
-                    # Ensure tensors are on the correct device
-                    face_tensor = face_tensor.to(self.device)
-                    audio_tensor = audio_tensor.to(self.device)
-                    
-                    # Ensure model is on the correct device
-                    self.model = self.model.to(self.device)
-                    
-                    # Log device information for debugging
-                    print(f"Model device: {next(self.model.parameters()).device}")
-                    print(f"Face tensor device: {face_tensor.device}")
-                    print(f"Audio tensor device: {audio_tensor.device}")
-                    
-                    # Get predicted landmarks from model
+                    batch_audio_segments.append(audio_segment)
+                
+                # Convert batch to tensor and move to GPU
+                batch_audio_tensor = torch.FloatTensor(np.array(batch_audio_segments)).to(self.device)
+                
+                # Repeat face tensor for batch processing
+                batch_face_tensor = face_tensor.repeat(current_batch_size, 1, 1, 1)
+                
+                # Process the entire batch at once on GPU
+                batch_pred_landmarks_list = []
+                try:
                     with torch.no_grad():
-                        pred_landmarks = self.model(audio_tensor, face_tensor)[0].cpu().numpy()
+                        batch_pred_landmarks = self.model(batch_audio_tensor, batch_face_tensor)
+                        # Move results back to CPU for OpenCV processing
+                        batch_pred_landmarks = batch_pred_landmarks.cpu().numpy()
+                        
+                    # Store successful predictions
+                    for idx in range(current_batch_size):
+                        batch_pred_landmarks_list.append(batch_pred_landmarks[idx])
                 except Exception as e:
-                    print(f"Model inference failed: {str(e)}")
-                    # Generate fallback landmarks based on audio amplitude
-                    pred_landmarks = landmarks.copy()
+                    print(f"Batch model inference failed: {str(e)}")
                     
-                    # Calculate audio amplitude for this segment
-                    audio_amp = np.mean(np.abs(audio_segment))
-                    mouth_openness = min(0.2, audio_amp * 10)  # Limit maximum openness
-                    
-                    # Adjust mouth landmarks based on audio amplitude
-                    mouth_center_x = (x1 + x2) / 2
-                    mouth_center_y = y1 + (y2 - y1) * 0.75
-                    mouth_width = (x2 - x1) * 0.4
-                    mouth_height = (y2 - y1) * (0.1 + mouth_openness)
+                    # If batch processing fails, fall back to individual processing
+                    # This is less efficient but more robust
+                    for idx in range(current_batch_size):
+                        try:
+                            with torch.no_grad():
+                                # Process one frame at a time
+                                audio_tensor = batch_audio_tensor[idx].unsqueeze(0)
+                                single_face_tensor = face_tensor.clone()  # Use the original face tensor
+                                pred = self.model(audio_tensor, single_face_tensor)[0].cpu().numpy()
+                                batch_pred_landmarks_list.append(pred)
+                        except Exception as e2:
+                            print(f"Individual frame {batch_start+idx} inference failed: {str(e2)}")
+                            
+                            # Generate fallback landmarks based on audio amplitude
+                            fallback_landmarks = landmarks.copy()
+                            
+                            # Calculate audio amplitude for this segment
+                            audio_segment = batch_audio_segments[idx]
+                            audio_amp = np.mean(np.abs(audio_segment))
+                            mouth_openness = min(0.2, audio_amp * 10)  # Limit maximum openness
+                            
+                            # Adjust mouth landmarks based on audio amplitude
+                            mouth_center_x = (x1 + x2) / 2
+                            mouth_center_y = y1 + (y2 - y1) * 0.75
+                            mouth_width = (x2 - x1) * 0.4
+                            mouth_height = (y2 - y1) * (0.1 + mouth_openness)
+                            
+                            # Update landmarks with fallback values
+                            batch_pred_landmarks_list.append(fallback_landmarks)
+                
+                # Process each frame with its predicted landmarks
+                for batch_idx, i in enumerate(range(batch_start, batch_end)):
+                    frame = batch_frames[batch_idx]
+                    pred_landmarks = batch_pred_landmarks_list[batch_idx]
                     
                     # Update outer mouth landmarks (48-59)
                     for j in range(12):
@@ -808,63 +853,59 @@ class MuseTalkModel:
                 pred_landmarks[:, 0] = pred_landmarks[:, 0] * (x2 - x1) + x1
                 pred_landmarks[:, 1] = pred_landmarks[:, 1] * (y2 - y1) + y1
                 
-                # Create a copy of the original frame for the final output
-                output_frame = frame.copy()
-                
                 # Get the mouth region from predicted landmarks
                 mouth_pred = pred_landmarks[48:68]
                 
+                # Create a simplified approach for lip-syncing
+                # Instead of warping the entire face, we'll just modify the mouth region
+                
                 # Create a mask for the mouth region
-                mask = np.zeros_like(frame)
+                mask = np.zeros((frame.shape[0], frame.shape[1]), dtype=np.uint8)
                 mouth_hull = cv2.convexHull(mouth_pred.astype(np.int32))
-                cv2.fillConvexPoly(mask, mouth_hull, (255, 255, 255))
+                cv2.fillConvexPoly(mask, mouth_hull, 255)
                 
                 # Dilate the mask slightly to create a smooth transition
                 kernel = np.ones((3, 3), np.uint8)
                 mask = cv2.dilate(mask, kernel, iterations=2)
                 
-                # Convert mask to single channel for warping
-                mask_single = mask[:,:,0]
+                # Get the bounding box of the mouth region to limit processing
+                x_min = max(0, int(np.min(mouth_pred[:, 0])) - 20)
+                y_min = max(0, int(np.min(mouth_pred[:, 1])) - 20)
+                x_max = min(frame.shape[1], int(np.max(mouth_pred[:, 0])) + 20)
+                y_max = min(frame.shape[0], int(np.max(mouth_pred[:, 1])) + 20)
                 
-                # Apply the predicted mouth to the original face
-                # Create a mesh grid for the face
-                h, w = frame.shape[:2]
-                x, y = np.meshgrid(np.arange(w), np.arange(h))
+                # Create a smaller region to process
+                mouth_region = frame[y_min:y_max, x_min:x_max].copy()
+                mouth_mask = mask[y_min:y_max, x_min:x_max]
                 
-                # Create a copy for the warped face
-                warped_face = frame.copy()
+                # Create a new mouth image based on the predicted landmarks
+                new_mouth = mouth_region.copy()
                 
-                # Warp the mouth region based on the difference between original and predicted landmarks
-                for i in range(48, 68):  # Mouth landmarks
-                    # Get the displacement between original and predicted landmarks
-                    dx = pred_landmarks[i, 0] - landmarks[i, 0]
-                    dy = pred_landmarks[i, 1] - landmarks[i, 1]
-                    
-                    # Calculate distance from this landmark to all pixels
-                    dist = np.sqrt((x - landmarks[i, 0])**2 + (y - landmarks[i, 1])**2)
-                    
-                    # Apply weighted displacement based on distance
-                    # Closer pixels move more, farther pixels move less
-                    weight = np.exp(-dist / 10.0)  # Adjust the divisor to control the falloff
-                    x_shift = dx * weight
-                    y_shift = dy * weight
-                    
-                    # Update the mesh grid
-                    x = x + x_shift
-                    y = y + y_shift
+                # Draw the mouth based on predicted landmarks
+                # Adjust landmarks to the local coordinate system
+                local_mouth_pred = mouth_pred.copy()
+                local_mouth_pred[:, 0] = local_mouth_pred[:, 0] - x_min
+                local_mouth_pred[:, 1] = local_mouth_pred[:, 1] - y_min
                 
-                # Ensure coordinates are within bounds
-                x = np.clip(x, 0, w-1).astype(np.float32)
-                y = np.clip(y, 0, h-1).astype(np.float32)
+                # Draw the mouth shape
+                cv2.fillConvexPoly(new_mouth, cv2.convexHull(local_mouth_pred.astype(np.int32)), (255, 150, 150))
                 
-                # Apply the warping using remap
-                warped_face = cv2.remap(frame, x, y, cv2.INTER_LINEAR)
+                # Create inner mouth (darker)
+                inner_mouth = mouth_pred[60:68].copy()
+                inner_mouth[:, 0] = inner_mouth[:, 0] - x_min
+                inner_mouth[:, 1] = inner_mouth[:, 1] - y_min
+                cv2.fillConvexPoly(new_mouth, cv2.convexHull(inner_mouth.astype(np.int32)), (200, 100, 100))
                 
-                # Blend the warped face with the original face using the mask
-                output_frame = cv2.bitwise_and(warped_face, mask) + cv2.bitwise_and(frame, cv2.bitwise_not(mask))
+                # Blend the new mouth with the original mouth region
+                alpha = 0.7  # Blend factor
+                blended_mouth = cv2.addWeighted(new_mouth, alpha, mouth_region, 1.0 - alpha, 0)
                 
-                # Replace the frame with the output frame
-                frame = output_frame
+                # Apply the mask to get only the mouth part
+                mouth_mask_3d = np.stack([mouth_mask] * 3, axis=2) / 255.0
+                blended_region = blended_mouth * mouth_mask_3d + mouth_region * (1 - mouth_mask_3d)
+                
+                # Put the blended mouth back into the frame
+                frame[y_min:y_max, x_min:x_max] = blended_region.astype(np.uint8)
                 
                 # For debugging, draw a small visualization in the corner
                 debug_size = 100
