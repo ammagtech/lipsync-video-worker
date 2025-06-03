@@ -722,6 +722,22 @@ class MuseTalkModel:
                 # Copy to permanent location
                 shutil.copy2(temp_output_path, permanent_output)
                 print(f"Copied to permanent location: {permanent_output}")
+                
+                # For testing, encode a short version of the video as base64
+                # Limit to 3 seconds to avoid large responses
+                try:
+                    # Create a shortened version of the video (3 seconds)
+                    short_output = os.path.join(os.path.dirname(permanent_output), f"short_{int(time.time())}.mp4")
+                    ffmpeg_cmd = f"ffmpeg -y -i {permanent_output} -t 3 -c:v copy -c:a copy {short_output}"
+                    os.system(ffmpeg_cmd)
+                    
+                    # Encode the shortened video as base64
+                    with open(short_output, 'rb') as f:
+                        video_base64 = base64.b64encode(f.read()).decode('utf-8')
+                    print(f"Encoded short video as base64, length: {len(video_base64)}")
+                except Exception as e:
+                    print(f"Error creating short video: {str(e)}")
+                    video_base64 = ""
             else:
                 print(f"Video creation failed or file is too small. Creating placeholder.")
                 # Create a placeholder video file
@@ -731,10 +747,10 @@ class MuseTalkModel:
                     # Add some dummy data
                     f.write(b'\x00' * 1024)
                 print(f"Created placeholder at {permanent_output}")
+                video_base64 = ""
             
-            # Return empty string for video_base64 for backward compatibility
-            # but we'll use the permanent_output path in the handler
-            return "", permanent_output
+            # Return both base64 and file path
+            return video_base64, permanent_output
         
         except Exception as e:
             print(f"Error in process_image_and_audio: {str(e)}")
@@ -1004,8 +1020,8 @@ def handler(event):
         
         try:
             # Process image and audio with MuseTalk
-            # This now returns a permanent path that won't be deleted
-            _, output_path = handler.model.process_image_and_audio(image_path, audio_path, bbox_shift)
+            # This now returns both base64 and a permanent path
+            video_base64, output_path = handler.model.process_image_and_audio(image_path, audio_path, bbox_shift)
             
             # Verify the output file exists
             if not os.path.exists(output_path):
@@ -1015,13 +1031,13 @@ def handler(event):
             file_size = os.path.getsize(output_path)
             print(f"Final output video file size: {file_size} bytes")
             
-            # Use RunPod's file output mechanism
-            # This will upload the file to RunPod storage and return a downloadable URL
+            # Return both the file path and base64 for testing
             return {
                 "status": "success",
                 "file_size_bytes": file_size,
                 "message": "MuseTalk processing completed successfully",
-                "output": runpod.upload_file(output_path)  # This uploads the file and returns a URL
+                "output_path": output_path,  # Path on the server
+                "video_base64": video_base64  # Base64 encoded short video for testing
             }
             
         except Exception as e:
@@ -1041,10 +1057,15 @@ def handler(event):
                     # Add some dummy data
                     f.write(b'\x00' * 1024)
                 
+                # Create a minimal base64 encoded video
+                with open(emergency_output, 'rb') as f:
+                    emergency_base64 = base64.b64encode(f.read()).decode('utf-8')
+                
                 return {
                     "status": "error",
                     "message": error_message,
-                    "output": runpod.upload_file(emergency_output)  # Upload the emergency file
+                    "output_path": emergency_output,
+                    "video_base64": emergency_base64
                 }
             except Exception as e2:
                 # If we can't even create an emergency file, just return the error
