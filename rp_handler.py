@@ -667,14 +667,13 @@ class MuseTalkModel:
             # Combine frames into video with audio
             self._create_video_with_audio(frame_paths, audio_path, output_path, fps)
             
-            # Read the output video as bytes
-            with open(output_path, 'rb') as f:
-                video_bytes = f.read()
-                
-            # Encode as base64 for safe return
-            video_base64 = base64.b64encode(video_bytes).decode('utf-8')
+            # No need to encode as base64 anymore, just return the path
+            # RunPod will handle file outputs
+            print(f"Video created at {output_path}, size: {os.path.getsize(output_path)} bytes")
             
-            return video_base64, output_path
+            # Return empty string for video_base64 for backward compatibility
+            # but we'll use the output_path in the handler
+            return "", output_path
             
         finally:
             # Clean up temporary directory
@@ -881,11 +880,18 @@ def handler(event):
         print(f"Processing image: {image_path} with audio: {audio_path}")
         
         # Process image and audio with MuseTalk
-        video_base64, output_path = handler.model.process_image_and_audio(image_path, audio_path, bbox_shift)
+        _, output_path = handler.model.process_image_and_audio(image_path, audio_path, bbox_shift)
         
+        # Get file size for logging
+        file_size = os.path.getsize(output_path)
+        print(f"Output video file size: {file_size} bytes")
+        
+        # Instead of returning base64, return the file path
+        # RunPod will automatically handle file outputs
         return {
             "status": "success",
-            "video_base64": video_base64,
+            "output_file": output_path,  # RunPod will handle this as a file output
+            "file_size_bytes": file_size,
             "message": "MuseTalk processing completed successfully"
         }
     except Exception as e:
