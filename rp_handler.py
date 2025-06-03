@@ -1,4 +1,5 @@
 import runpod
+from runpod.serverless.utils import RunPodEvent  # Add this import for the RunPodEvent type
 import os
 import time
 import base64
@@ -19,6 +20,7 @@ from facexlib.detection import init_detection_model
 from facexlib.alignment import init_alignment_model
 from basicsr.utils.download_util import load_file_from_url
 from torchvision.transforms.functional import normalize
+from typing import Dict, Any  # Add this for type hints
 import librosa
 import scipy
 import einops
@@ -837,7 +839,7 @@ class MuseTalkModel:
                 print(f"Failed to create even a placeholder file: {str(e2)}")
                 return False
 
-def handler(event: RunPodEvent) -> Dict:
+def handler(event: RunPodEvent) -> Dict[str, Any]:
     print("Worker Start")
 
     # Initialize model if not already done
