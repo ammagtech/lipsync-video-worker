@@ -12,6 +12,7 @@ import ffmpeg
 from PIL import Image
 import io
 import requests
+import boto3
 from urllib.parse import urlparse
 import torch
 import torch.nn.functional as F
@@ -23,6 +24,54 @@ import librosa
 import scipy
 import einops
 import matplotlib.pyplot as plt
+
+# B2 Storage configuration
+B2_CONFIG = {
+    'access_key_id': '005535c6992951a0000000001',
+    'secret_access_key': 'K005pcqp/ctlk4HBOGZF7lWWDL4Qg3k',
+    'region': 'us-east-005',
+    'endpoint_url': 'https://s3.us-east-005.backblazeb2.com',
+    'bucket_name': 'ahmadhannanmassod'
+}
+
+def upload_to_b2(file_path):
+    """
+    Upload a file to Backblaze B2 storage and return the URL
+    """
+    try:
+        # Create S3 client with B2 configuration
+        s3_client = boto3.client(
+            's3',
+            region_name=B2_CONFIG['region'],
+            endpoint_url=B2_CONFIG['endpoint_url'],
+            aws_access_key_id=B2_CONFIG['access_key_id'],
+            aws_secret_access_key=B2_CONFIG['secret_access_key']
+        )
+        
+        # Get the filename from the path
+        file_name = os.path.basename(file_path)
+        
+        # Add timestamp to ensure uniqueness
+        timestamp = int(time.time())
+        unique_file_name = f"{timestamp}_{file_name}"
+        
+        print(f"Uploading {file_path} to B2 as {unique_file_name}...")
+        
+        # Upload the file
+        s3_client.upload_file(
+            file_path,
+            B2_CONFIG['bucket_name'],
+            unique_file_name
+        )
+        
+        # Generate the URL
+        url = f"{B2_CONFIG['endpoint_url']}/{B2_CONFIG['bucket_name']}/{unique_file_name}"
+        print(f"File uploaded successfully. URL: {url}")
+        
+        return url
+    except Exception as e:
+        print(f"Error uploading to B2: {str(e)}")
+        return None
 
 class MuseTalkModel:
     def fallback_face_detector(self, img):
@@ -1031,14 +1080,26 @@ def handler(event):
             file_size = os.path.getsize(output_path)
             print(f"Final output video file size: {file_size} bytes")
             
-            # Return both the file path and base64 for testing
-            return {
-                "status": "success",
-                "file_size_bytes": file_size,
-                "message": "MuseTalk processing completed successfully",
-                "output_path": output_path,  # Path on the server
-                "video_base64": video_base64  # Base64 encoded short video for testing
-            }
+            # Upload the video to B2 storage
+            video_url = upload_to_b2(output_path)
+            
+            if video_url:
+                return {
+                    "status": "success",
+                    "file_size_bytes": file_size,
+                    "message": "MuseTalk processing completed successfully",
+                    "video_url": video_url,  # Public URL to the video
+                    "local_path": output_path  # Path on the server (for debugging)
+                }
+            else:
+                # Fallback to base64 if upload fails
+                return {
+                    "status": "success",
+                    "file_size_bytes": file_size,
+                    "message": "Video processed successfully but B2 upload failed",
+                    "local_path": output_path,
+                    "video_base64": video_base64  # Base64 encoded short video as fallback
+                }
             
         except Exception as e:
             error_message = f"Error processing: {str(e)}"
@@ -1057,16 +1118,26 @@ def handler(event):
                     # Add some dummy data
                     f.write(b'\x00' * 1024)
                 
-                # Create a minimal base64 encoded video
-                with open(emergency_output, 'rb') as f:
-                    emergency_base64 = base64.b64encode(f.read()).decode('utf-8')
+                # Try to upload the emergency file to B2
+                emergency_url = upload_to_b2(emergency_output)
                 
-                return {
-                    "status": "error",
-                    "message": error_message,
-                    "output_path": emergency_output,
-                    "video_base64": emergency_base64
-                }
+                if emergency_url:
+                    return {
+                        "status": "error",
+                        "message": error_message,
+                        "video_url": emergency_url
+                    }
+                else:
+                    # Fallback to base64 if upload fails
+                    with open(emergency_output, 'rb') as f:
+                        emergency_base64 = base64.b64encode(f.read()).decode('utf-8')
+                    
+                    return {
+                        "status": "error",
+                        "message": error_message,
+                        "local_path": emergency_output,
+                        "video_base64": emergency_base64
+                    }
             except Exception as e2:
                 # If we can't even create an emergency file, just return the error
                 return {

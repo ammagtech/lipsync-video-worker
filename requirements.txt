@@ -21,3 +21,4 @@ matplotlib==3.7.2
 # dlib is installed separately in the Dockerfile
 # dlib==19.24.0
 tqdm==4.66.1
+boto3==1.28.0
