@@ -75,33 +75,62 @@ def upload_to_b2(file_path):
 
 class MuseTalkModel:
     def fallback_face_detector(self, img):
-        """Fallback face detection using OpenCV's Haar Cascade"""
+        """Fallback face detection using OpenCV's Haar Cascade and DNN face detector"""
         try:
-            # Convert to grayscale for face detection
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            # Convert to RGB for DNN detector
+            rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            h, w = img.shape[:2]
             
-            # Use OpenCV's built-in face detector as fallback
-            face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-            faces = face_cascade.detectMultiScale(gray, 1.1, 4)
-            
-            # Convert to format expected by the rest of the code
-            # [x1, y1, x2, y2, confidence]
+            # Try multiple face detection methods
             result = []
-            for (x, y, w, h) in faces:
-                result.append([x, y, x+w, y+h, 0.9])  # Add confidence of 0.9
             
-            if not result:  # If no faces found
-                # Return a default face box in the center of the image
-                h, w = img.shape[:2]
+            # Method 1: Haar Cascade
+            try:
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+                faces = face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(100, 100))
+                
+                for (x, y, w, h) in faces:
+                    # Expand the face box slightly for better results
+                    x1 = max(0, x - int(w * 0.1))
+                    y1 = max(0, y - int(h * 0.1))
+                    x2 = min(img.shape[1], x + w + int(w * 0.1))
+                    y2 = min(img.shape[0], y + h + int(h * 0.1))
+                    result.append([x1, y1, x2, y2, 0.9])
+            except Exception as e:
+                print(f"Haar cascade detection failed: {str(e)}")
+            
+            # Method 2: Try another cascade classifier if available
+            if not result:
+                try:
+                    alt_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_alt.xml')
+                    alt_faces = alt_cascade.detectMultiScale(gray, 1.1, 5)
+                    for (x, y, w, h) in alt_faces:
+                        # Expand the face box slightly
+                        x1 = max(0, x - int(w * 0.1))
+                        y1 = max(0, y - int(h * 0.1))
+                        x2 = min(img.shape[1], x + w + int(w * 0.1))
+                        y2 = min(img.shape[0], y + h + int(h * 0.1))
+                        result.append([x1, y1, x2, y2, 0.9])
+                except Exception as e:
+                    print(f"Alt cascade detection failed: {str(e)}")
+            
+            # If no faces found with any method, use a default centered box
+            if not result:
+                print("No faces detected with any method, using default box")
+                # Use a centered box covering 50% of the image
                 x1 = int(w * 0.25)
                 y1 = int(h * 0.25)
                 x2 = int(w * 0.75)
                 y2 = int(h * 0.75)
-                return [[x1, y1, x2, y2, 0.9]]
+                result = [[x1, y1, x2, y2, 0.9]]
             
-            return result
+            # Sort by area (largest first) and take the largest face
+            result.sort(key=lambda box: (box[2] - box[0]) * (box[3] - box[1]), reverse=True)
+            return [result[0]]
+            
         except Exception as e:
-            print(f"Fallback face detector failed: {str(e)}")
+            print(f"All face detection methods failed: {str(e)}")
             # Return a default face box in the center of the image
             h, w = img.shape[:2]
             x1 = int(w * 0.25)
@@ -111,15 +140,18 @@ class MuseTalkModel:
             return [[x1, y1, x2, y2, 0.9]]
     
     def fallback_face_alignment(self, img, boxes):
-        """Fallback face alignment that returns estimated landmark positions"""
+        """Enhanced fallback face alignment that returns estimated landmarks"""
         try:
+            # If no boxes, return empty landmarks
+            if not boxes or len(boxes) == 0:
+                return None
+            
             results = []
             for box in boxes:
                 x1, y1, x2, y2 = box[:4]
                 w, h = x2 - x1, y2 - y1
                 
                 # Generate 68 landmarks in the standard configuration
-                # This is a very rough approximation
                 landmarks = np.zeros((68, 2))
                 
                 # Face outline (0-16)
@@ -173,29 +205,66 @@ class MuseTalkModel:
                     landmarks[42+i, 0] = right_eye_center_x + np.cos(angle) * right_eye_width / 2
                     landmarks[42+i, 1] = right_eye_center_y + np.sin(angle) * right_eye_height / 2
                 
-                # Mouth (48-67)
+                # Mouth (48-67) - More detailed mouth for better lip sync
                 mouth_center_x = x1 + w * 0.5
                 mouth_center_y = y1 + h * 0.75
                 mouth_width = w * 0.4
                 mouth_height = h * 0.1
                 
-                # Outer mouth (48-59)
-                for i in range(12):
-                    angle = i * 2 * np.pi / 12
-                    landmarks[48+i, 0] = mouth_center_x + np.cos(angle) * mouth_width / 2
-                    landmarks[48+i, 1] = mouth_center_y + np.sin(angle) * mouth_height / 2
+                # Outer mouth (48-59) - Use more natural mouth shape
+                # Top lip
+                landmarks[48, 0] = x1 + w * 0.35  # Left corner
+                landmarks[48, 1] = y1 + h * 0.73
+                landmarks[49, 0] = x1 + w * 0.4
+                landmarks[49, 1] = y1 + h * 0.72
+                landmarks[50, 0] = x1 + w * 0.45
+                landmarks[50, 1] = y1 + h * 0.71
+                landmarks[51, 0] = x1 + w * 0.5  # Top middle
+                landmarks[51, 1] = y1 + h * 0.71
+                landmarks[52, 0] = x1 + w * 0.55
+                landmarks[52, 1] = y1 + h * 0.71
+                landmarks[53, 0] = x1 + w * 0.6
+                landmarks[53, 1] = y1 + h * 0.72
+                landmarks[54, 0] = x1 + w * 0.65  # Right corner
+                landmarks[54, 1] = y1 + h * 0.73
                 
-                # Inner mouth (60-67)
-                inner_mouth_width = mouth_width * 0.7
-                inner_mouth_height = mouth_height * 0.7
-                for i in range(8):
-                    angle = i * 2 * np.pi / 8
-                    landmarks[60+i, 0] = mouth_center_x + np.cos(angle) * inner_mouth_width / 2
-                    landmarks[60+i, 1] = mouth_center_y + np.sin(angle) * inner_mouth_height / 2
+                # Bottom lip
+                landmarks[55, 0] = x1 + w * 0.6
+                landmarks[55, 1] = y1 + h * 0.77
+                landmarks[56, 0] = x1 + w * 0.55
+                landmarks[56, 1] = y1 + h * 0.79
+                landmarks[57, 0] = x1 + w * 0.5  # Bottom middle
+                landmarks[57, 1] = y1 + h * 0.8
+                landmarks[58, 0] = x1 + w * 0.45
+                landmarks[58, 1] = y1 + h * 0.79
+                landmarks[59, 0] = x1 + w * 0.4
+                landmarks[59, 1] = y1 + h * 0.77
+                
+                # Inner mouth (60-67) - Smaller inner mouth for better lip sync
+                # Top inner lip
+                landmarks[60, 0] = x1 + w * 0.35  # Left corner (same as outer)
+                landmarks[60, 1] = y1 + h * 0.73
+                landmarks[61, 0] = x1 + w * 0.4
+                landmarks[61, 1] = y1 + h * 0.73
+                landmarks[62, 0] = x1 + w * 0.45
+                landmarks[62, 1] = y1 + h * 0.73
+                landmarks[63, 0] = x1 + w * 0.5  # Top middle
+                landmarks[63, 1] = y1 + h * 0.73
+                landmarks[64, 0] = x1 + w * 0.55
+                landmarks[64, 1] = y1 + h * 0.73
+                landmarks[65, 0] = x1 + w * 0.6
+                landmarks[65, 1] = y1 + h * 0.73
+                landmarks[66, 0] = x1 + w * 0.65  # Right corner (same as outer)
+                landmarks[66, 1] = y1 + h * 0.73
+                landmarks[67, 0] = x1 + w * 0.5  # Bottom middle
+                landmarks[67, 1] = y1 + h * 0.76
                 
                 results.append(landmarks)
             
-            return results
+            # Return the first face's landmarks (most prominent face)
+            if results:
+                return results[0]
+            return None
         except Exception as e:
             print(f"Fallback face alignment failed: {str(e)}")
             # Return a default set of landmarks
@@ -257,8 +326,15 @@ class MuseTalkModel:
     def __init__(self):
         print("Initializing the actual MuseTalk model...")
         
-        # Set device
+        # Set device and enable CUDA optimization
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if torch.cuda.is_available():
+            print(f"CUDA is available. Using GPU: {torch.cuda.get_device_name(0)}")
+            # Enable CUDA optimization
+            torch.backends.cudnn.benchmark = True
+            torch.backends.cudnn.enabled = True
+        else:
+            print("CUDA is not available. Using CPU.")
         print(f"Using device: {self.device}")
         
         # Check for all required model paths
@@ -683,7 +759,18 @@ class MuseTalkModel:
                     face_tensor = torch.FloatTensor(face_img).permute(2, 0, 1).unsqueeze(0)
                     face_tensor = face_tensor / 255.0  # Normalize to [0, 1]
                     face_tensor = normalize(face_tensor, [0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+                    
+                    # Ensure tensors are on the correct device
                     face_tensor = face_tensor.to(self.device)
+                    audio_tensor = audio_tensor.to(self.device)
+                    
+                    # Ensure model is on the correct device
+                    self.model = self.model.to(self.device)
+                    
+                    # Log device information for debugging
+                    print(f"Model device: {next(self.model.parameters()).device}")
+                    print(f"Face tensor device: {face_tensor.device}")
+                    print(f"Audio tensor device: {audio_tensor.device}")
                     
                     # Get predicted landmarks from model
                     with torch.no_grad():
