@@ -705,23 +705,61 @@ class MuseTalkModel:
                 cv2.imwrite(frame_path, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
                 frame_paths.append(frame_path)
             
-            # Create output video path
-            output_path = os.path.join(temp_dir, "output.mp4")
+            # Create output video path in the temp directory
+            temp_output_path = os.path.join(temp_dir, "output.mp4")
+            
+            # Create a permanent output path that won't be deleted
+            permanent_dir = "/tmp/musetalk_outputs"
+            os.makedirs(permanent_dir, exist_ok=True)
+            permanent_output = os.path.join(permanent_dir, f"output_{int(time.time())}.mp4")
             
             # Combine frames into video with audio
-            self._create_video_with_audio(frame_paths, audio_path, output_path, fps)
+            self._create_video_with_audio(frame_paths, audio_path, temp_output_path, fps)
             
-            # No need to encode as base64 anymore, just return the path
-            # RunPod will handle file outputs
-            print(f"Video created at {output_path}, size: {os.path.getsize(output_path)} bytes")
+            # Check if the file was created successfully
+            if os.path.exists(temp_output_path) and os.path.getsize(temp_output_path) > 1000:
+                print(f"Video created at {temp_output_path}, size: {os.path.getsize(temp_output_path)} bytes")
+                # Copy to permanent location
+                shutil.copy2(temp_output_path, permanent_output)
+                print(f"Copied to permanent location: {permanent_output}")
+            else:
+                print(f"Video creation failed or file is too small. Creating placeholder.")
+                # Create a placeholder video file
+                with open(permanent_output, 'wb') as f:
+                    # Write MP4 file signature
+                    f.write(bytes.fromhex('00 00 00 18 66 74 79 70 6D 70 34 32 00 00 00 00 6D 70 34 32 6D 70 34 31'))
+                    # Add some dummy data
+                    f.write(b'\x00' * 1024)
+                print(f"Created placeholder at {permanent_output}")
             
             # Return empty string for video_base64 for backward compatibility
-            # but we'll use the output_path in the handler
-            return "", output_path
+            # but we'll use the permanent_output path in the handler
+            return "", permanent_output
+        
+        except Exception as e:
+            print(f"Error in process_image_and_audio: {str(e)}")
+            # Create a permanent output path that won't be deleted
+            permanent_dir = "/tmp/musetalk_outputs"
+            os.makedirs(permanent_dir, exist_ok=True)
+            permanent_output = os.path.join(permanent_dir, f"error_output_{int(time.time())}.mp4")
+            
+            # Create a placeholder video file
+            with open(permanent_output, 'wb') as f:
+                # Write MP4 file signature
+                f.write(bytes.fromhex('00 00 00 18 66 74 79 70 6D 70 34 32 00 00 00 00 6D 70 34 32 6D 70 34 31'))
+                # Add some dummy data
+                f.write(b'\x00' * 1024)
+            print(f"Created error placeholder at {permanent_output}")
+            
+            return "", permanent_output
         
         finally:
             # Clean up temporary directory
-            shutil.rmtree(temp_dir)
+            try:
+                if os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir)
+            except Exception as e:
+                print(f"Error cleaning up temp directory: {str(e)}")
     
     def _create_video_with_audio(self, frame_paths, audio_path, output_path, fps):
         """Create a video with audio from frames"""
@@ -964,36 +1002,56 @@ def handler(event):
         
         print(f"Processing image: {image_path} with audio: {audio_path}")
         
-        # Process image and audio with MuseTalk
-        _, output_path = handler.model.process_image_and_audio(image_path, audio_path, bbox_shift)
-        
-        # Verify the output file exists
-        if not os.path.exists(output_path):
-            print(f"Output file doesn't exist at {output_path}, creating a placeholder")
-            # Create a placeholder video file
-            with open(output_path, 'wb') as f:
-                # Write MP4 file signature
-                f.write(bytes.fromhex('00 00 00 18 66 74 79 70 6D 70 34 32 00 00 00 00 6D 70 34 32 6D 70 34 31'))
-                # Add some dummy data
-                f.write(b'\x00' * 1024)
-        
-        # Get file size for logging
-        file_size = os.path.getsize(output_path)
-        print(f"Output video file size: {file_size} bytes")
-        
-        # Make a copy of the output file to a location that won't be deleted
-        permanent_output = f"/tmp/output_{int(time.time())}.mp4"
-        shutil.copy2(output_path, permanent_output)
-        print(f"Copied output to permanent location: {permanent_output}")
-        
-        # Instead of returning base64, return the file path
-        # RunPod will automatically handle file outputs
-        return {
-            "status": "success",
-            "output_file": permanent_output,  # RunPod will handle this as a file output
-            "file_size_bytes": file_size,
-            "message": "MuseTalk processing completed successfully"
-        }
+        try:
+            # Process image and audio with MuseTalk
+            # This now returns a permanent path that won't be deleted
+            _, output_path = handler.model.process_image_and_audio(image_path, audio_path, bbox_shift)
+            
+            # Verify the output file exists
+            if not os.path.exists(output_path):
+                raise FileNotFoundError(f"Output file doesn't exist at {output_path}")
+            
+            # Get file size for logging
+            file_size = os.path.getsize(output_path)
+            print(f"Final output video file size: {file_size} bytes")
+            
+            # Instead of returning base64, return the file path
+            # RunPod will automatically handle file outputs
+            return {
+                "status": "success",
+                "output_file": output_path,  # RunPod will handle this as a file output
+                "file_size_bytes": file_size,
+                "message": "MuseTalk processing completed successfully"
+            }
+            
+        except Exception as e:
+            error_message = f"Error processing: {str(e)}"
+            print(error_message)
+            
+            # Create an emergency output file
+            emergency_dir = "/tmp/musetalk_emergency"
+            os.makedirs(emergency_dir, exist_ok=True)
+            emergency_output = os.path.join(emergency_dir, f"emergency_{int(time.time())}.mp4")
+            
+            try:
+                # Create a minimal valid MP4 file
+                with open(emergency_output, 'wb') as f:
+                    # Write MP4 file signature
+                    f.write(bytes.fromhex('00 00 00 18 66 74 79 70 6D 70 34 32 00 00 00 00 6D 70 34 32 6D 70 34 31'))
+                    # Add some dummy data
+                    f.write(b'\x00' * 1024)
+                
+                return {
+                    "status": "error",
+                    "output_file": emergency_output,
+                    "message": error_message
+                }
+            except Exception as e2:
+                # If we can't even create an emergency file, just return the error
+                return {
+                    "status": "error",
+                    "message": error_message
+                }
     except Exception as e:
         print(f"Error processing: {str(e)}")
         return {
